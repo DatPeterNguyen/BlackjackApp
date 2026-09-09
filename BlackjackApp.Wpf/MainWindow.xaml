@@ -5,8 +5,110 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:BlackjackApp.Wpf"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="Blackjack" Height="800" Width="1280"
+        WindowStartupLocation="CenterScreen"
+        Background="#0B3D2E">
 
+    <!--
+        HOUR 0-1 LAYOUT SKELETON (still in place)
+        HOUR 1-2.5 ADDITION: hardcoded card/chip images dropped into the
+        dealer area and Hand 1 slot ONLY, to judge size/quality of the art
+        pack against this layout before any real dealing logic exists.
+        Hands 2-5 are left as text placeholders on purpose - we only need
+        one populated slot to judge sizing, and this proves the "does 5
+        hands fit" layout question stays true once real card images (which
+        are wider than plain text) are in the mix.
+    -->
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="2*"/>
+            <RowDefinition Height="3*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: Top bar -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="#14261F" CornerRadius="6" Padding="12,8" HorizontalAlignment="Left">
+                <TextBlock x:Name="BalanceText" Text="Balance: $1,000" Foreground="White" FontSize="18" FontWeight="Bold"/>
+            </Border>
+
+            <Button x:Name="SettingsButton" Grid.Column="1" Content="Settings" Padding="12,8" Click="SettingsButton_OnClick"/>
+        </Grid>
+
+        <!-- Row 1: Dealer area - now showing real card art (hardcoded: one face-down, one face-up) -->
+        <Border Grid.Row="1" BorderBrush="#3A6B57" BorderThickness="2" CornerRadius="8"
+                Background="#0E4433" Margin="0,0,0,12">
+            <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="Dealer" Foreground="#8FBFA9" FontSize="14" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                <StackPanel Orientation="Horizontal">
+                    <Image Source="Assets/Cards/back_red.png" Height="140" Margin="4" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                    <Image Source="Assets/Cards/AS.png" Height="140" Margin="4" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Row 2: Player hand slots - Hand 1 now showing real card + chip art, Hands 2-5 still placeholders -->
+        <Border Grid.Row="2" BorderBrush="#3A6B57" BorderThickness="2" CornerRadius="8"
+                Background="#0E4433" Margin="0,0,0,12">
+            <UniformGrid x:Name="PlayerHandsPanel" Rows="1" Columns="5">
+                <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
+                    <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Image Source="Assets/Cards/10H.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            <Image Source="Assets/Cards/7C.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        </StackPanel>
+                        <Image Source="Assets/Chips/chip_25.png" Height="44" Margin="0,8,0,0" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        <TextBlock Text="Bet: $25" Foreground="#8FBFA9" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
+                    <TextBlock Text="Hand 2" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
+                    <TextBlock Text="Hand 3" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
+                    <TextBlock Text="Hand 4" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
+                    <TextBlock Text="Hand 5" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+            </UniformGrid>
+        </Border>
+
+        <!-- Row 3: Bet display -->
+        <Border Grid.Row="3" Background="#14261F" CornerRadius="6" Padding="12,8"
+                HorizontalAlignment="Center" Margin="0,0,0,12">
+            <TextBlock x:Name="CurrentBetText" Text="Current Bet: $0" Foreground="White" FontSize="20" FontWeight="Bold"/>
+        </Border>
+
+        <!-- Row 4: Chip buttons -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
+            <Button Content="$1" Width="60" Height="60" Margin="4" Click="ChipButton_OnClick" Tag="1"/>
+            <Button Content="$5" Width="60" Height="60" Margin="4" Click="ChipButton_OnClick" Tag="5"/>
+            <Button Content="$10" Width="60" Height="60" Margin="4" Click="ChipButton_OnClick" Tag="10"/>
+            <Button Content="$25" Width="60" Height="60" Margin="4" Click="ChipButton_OnClick" Tag="25"/>
+            <Button Content="$100" Width="60" Height="60" Margin="4" Click="ChipButton_OnClick" Tag="100"/>
+            <Button Content="$1000" Width="60" Height="60" Margin="4" Click="ChipButton_OnClick" Tag="1000"/>
+            <Button Content="$10K" Width="60" Height="60" Margin="4" Click="ChipButton_OnClick" Tag="10000"/>
+            <Button x:Name="ClearBetButton" Content="Clear" Width="60" Height="60" Margin="16,4,4,4" Click="ClearBetButton_OnClick"/>
+        </StackPanel>
+
+        <!-- Row 5: Action buttons -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button x:Name="DealButton" Content="Deal" Width="100" Height="44" Margin="4" FontWeight="Bold" Click="DealButton_OnClick"/>
+            <Button x:Name="HitButton" Content="Hit" Width="100" Height="44" Margin="4" Click="HitButton_OnClick"/>
+            <Button x:Name="StandButton" Content="Stand" Width="100" Height="44" Margin="4" Click="StandButton_OnClick"/>
+            <Button x:Name="DoubleButton" Content="Double" Width="100" Height="44" Margin="4" Click="DoubleButton_OnClick"/>
+            <Button x:Name="SplitButton" Content="Split" Width="100" Height="44" Margin="4" Click="SplitButton_OnClick"/>
+        </StackPanel>
     </Grid>
 </Window>
