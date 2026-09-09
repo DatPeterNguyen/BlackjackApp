@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackjackApp.core", "BlackjackApp.core\BlackjackApp.core.csproj", "{041AD8DB-A952-4C34-A077-68B2B718BF03}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackjackApp.Tests", "BlackjackApp.Tests\BlackjackApp.Tests.csproj", "{52930730-7E52-4143-B5A3-E282DBC323B2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackjackApp.Wpf", "BlackjackApp.Wpf\BlackjackApp.Wpf.csproj", "{CA817D51-BE23-40C6-BD47-979BC0AED3C7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{041AD8DB-A952-4C34-A077-68B2B718BF03}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{041AD8DB-A952-4C34-A077-68B2B718BF03}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{041AD8DB-A952-4C34-A077-68B2B718BF03}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{041AD8DB-A952-4C34-A077-68B2B718BF03}.Release|Any CPU.Build.0 = Release|Any CPU
+		{52930730-7E52-4143-B5A3-E282DBC323B2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{52930730-7E52-4143-B5A3-E282DBC323B2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{52930730-7E52-4143-B5A3-E282DBC323B2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{52930730-7E52-4143-B5A3-E282DBC323B2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
