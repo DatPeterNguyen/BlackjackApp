@@ -1,6 +1,7 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using BlackjackApp.Wpf.Views;
 
 namespace BlackjackApp.Wpf;
 
@@ -20,19 +21,13 @@ public partial class MainWindow : Window
     // bet amount once betting logic exists.
     private int _currentBet;
 
-    public MainWindow() // Build and display the visual
+    public MainWindow()
     {
         InitializeComponent();
     }
 
-    private void ChipButton_OnClick(object sender, RoutedEventArgs e) 
+    private void ChipButton_OnClick(object sender, RoutedEventArgs e)
     {
-        /*
-         * Shared handler that the seven chip buttons point to.
-         * It matches sender (button they clicked) as a Button.
-         * The tag attached to the button is a string, which is then parsed as an integer.
-         * If successful, adds the chip value to the current bet.
-         */
         if (sender is Button { Tag: string tagValue } && int.TryParse(tagValue, out var chipValue))
         {
             _currentBet += chipValue;
@@ -42,17 +37,14 @@ public partial class MainWindow : Window
 
     private void ClearBetButton_OnClick(object sender, RoutedEventArgs e)
     {
-        /*
-         * Clears bet, set bet to 0.
-         */
         _currentBet = 0;
         CurrentBetText.Text = "Current Bet: $0";
     }
 
     private void SettingsButton_OnClick(object sender, RoutedEventArgs e)
     {
-        
-        Debug.WriteLine("Settings clicked - no settings view yet.");
+        var settingsWindow = new SettingsWindow { Owner = this };
+        settingsWindow.ShowDialog();
     }
 
     private void DealButton_OnClick(object sender, RoutedEventArgs e)

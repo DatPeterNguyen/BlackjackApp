@@ -55,7 +55,13 @@
             </StackPanel>
         </Border>
 
-        <!-- Row 2: Player hand slots - Hand 1 now showing real card + chip art, Hands 2-5 still placeholders -->
+        <!--
+            Row 2: Player hand slots.
+            HOUR 5-6.5 ADDITION: all 5 slots now show real card/chip art
+            (each with different hardcoded cards, just so they're visually
+            distinguishable) to prove 5 real hands - not just 5 text labels -
+            still fit comfortably without crowding or scrolling.
+        -->
         <Border Grid.Row="2" BorderBrush="#3A6B57" BorderThickness="2" CornerRadius="8"
                 Background="#0E4433" Margin="0,0,0,12">
             <UniformGrid x:Name="PlayerHandsPanel" Rows="1" Columns="5">
@@ -70,16 +76,44 @@
                     </StackPanel>
                 </Border>
                 <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
-                    <TextBlock Text="Hand 2" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Image Source="Assets/Cards/KS.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            <Image Source="Assets/Cards/QD.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        </StackPanel>
+                        <Image Source="Assets/Chips/chip_100.png" Height="44" Margin="0,8,0,0" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        <TextBlock Text="Bet: $100" Foreground="#8FBFA9" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
                 </Border>
                 <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
-                    <TextBlock Text="Hand 3" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Image Source="Assets/Cards/AC.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            <Image Source="Assets/Cards/AD.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        </StackPanel>
+                        <Image Source="Assets/Chips/chip_10.png" Height="44" Margin="0,8,0,0" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        <TextBlock Text="Bet: $10" Foreground="#8FBFA9" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
                 </Border>
                 <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
-                    <TextBlock Text="Hand 4" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Image Source="Assets/Cards/5H.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            <Image Source="Assets/Cards/6C.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        </StackPanel>
+                        <Image Source="Assets/Chips/chip_5.png" Height="44" Margin="0,8,0,0" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        <TextBlock Text="Bet: $5" Foreground="#8FBFA9" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
                 </Border>
                 <Border Margin="6" BorderBrush="#8FBFA9" BorderThickness="1" CornerRadius="6">
-                    <TextBlock Text="Hand 5" Foreground="#8FBFA9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Image Source="Assets/Cards/9S.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            <Image Source="Assets/Cards/9D.png" Height="110" Margin="2" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        </StackPanel>
+                        <Image Source="Assets/Chips/chip_1000.png" Height="44" Margin="0,8,0,0" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                        <TextBlock Text="Bet: $1,000" Foreground="#8FBFA9" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
                 </Border>
             </UniformGrid>
         </Border>
