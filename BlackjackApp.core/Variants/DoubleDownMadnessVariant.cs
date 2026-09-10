@@ -57,6 +57,9 @@ public class DoubleDownMadnessVariant : IGameVariant
         return !(openedWithAce && hand.Cards.Count >= 2);
     }
 
+    /// <summary>Doubling does NOT end the turn - "double multiple times" and "hit after doubling" are both allowed.</summary>
+    public bool EndsTurnAfterDouble => false;
+
     /// <summary>Splitting isn't offered in this variant at all.</summary>
     public bool CanSplit(Hand hand) => false;
 

@@ -26,8 +26,14 @@ public class StandardBlackjackVariant : IGameVariant
 
     public void Hit(Deck deck, Hand hand) => hand.AddCard(deck.Draw());
 
+    /// <summary>No special restriction beyond not hitting a hand that's already bust.</summary>
+    public bool CanHit(Hand hand) => !hand.IsBust;
+
     /// <summary>Double down is allowed on any first two cards (Vegas default), before any hit.</summary>
     public bool CanDoubleDown(Hand hand) => hand.Cards.Count == 2;
+
+    /// <summary>Doubling gives exactly one card and ends the turn immediately - the standard rule.</summary>
+    public bool EndsTurnAfterDouble => true;
 
     /// <summary>
     /// Splittable if the hand is exactly two cards of equal point value

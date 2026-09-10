@@ -78,7 +78,11 @@ public class WarBlackjackVariant : IGameVariant
 
     public void Hit(Deck deck, Hand hand) => _blackjackRules.Hit(deck, hand);
 
+    public bool CanHit(Hand hand) => _blackjackRules.CanHit(hand);
+
     public bool CanDoubleDown(Hand hand) => _blackjackRules.CanDoubleDown(hand);
+
+    public bool EndsTurnAfterDouble => _blackjackRules.EndsTurnAfterDouble;
 
     public bool CanSplit(Hand hand) => _blackjackRules.CanSplit(hand);
 

@@ -48,6 +48,25 @@ public class StandardBlackjackVariantTests
     }
 
     [Test]
+    public void CanHit_FalseOnlyOnceBust()
+    {
+        var okHand = HandOf((Suit.Spades, Rank.Five), (Suit.Hearts, Rank.Six));
+        var bustHand = HandOf((Suit.Spades, Rank.King), (Suit.Hearts, Rank.Queen), (Suit.Clubs, Rank.Five));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_variant.CanHit(okHand), Is.True);
+            Assert.That(_variant.CanHit(bustHand), Is.False);
+        });
+    }
+
+    [Test]
+    public void EndsTurnAfterDouble_IsTrue()
+    {
+        Assert.That(_variant.EndsTurnAfterDouble, Is.True);
+    }
+
+    [Test]
     public void CanDoubleDown_TrueOnlyWithExactlyTwoCards()
     {
         var twoCardHand = HandOf((Suit.Spades, Rank.Five), (Suit.Hearts, Rank.Six));

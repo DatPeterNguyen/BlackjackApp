@@ -2,20 +2,36 @@ using BlackjackApp.core.Models;
 
 namespace BlackjackApp.core.Variants;
 
-// Contract every table variant (Standard, Double Down Madness, War) will
-// implement. Standard Blackjack has a full implementation; the other two
-// still throw NotImplementedException until their own rules get built.
+// Contract every table variant (Standard, Double Down Madness, War)
+// implements, so the table UI can hold a single IGameVariant reference and
+// stay entirely variant-agnostic - it never needs to know it's looking at
+// Standard vs. Double Down Madness vs. War.
 public interface IGameVariant
 {
     string Name { get; }
 
-    /// <summary>Deals the opening two cards each to the player hand and the dealer hand, alternating, from the given shoe.</summary>
+    /// <summary>
+    /// Deals each variant's own opening hand shape from the given shoe -
+    /// this differs per variant (Standard: 2 cards each; Double Down
+    /// Madness: 1 to the player, 2 to the dealer; War: a War card each
+    /// plus, once that side bet resolves, a second blackjack card each).
+    /// </summary>
     void DealInitialCards(Deck deck, Hand playerHand, Hand dealerHand);
 
     /// <summary>Draws one card from the shoe into the given hand.</summary>
     void Hit(Deck deck, Hand hand);
 
+    /// <summary>Whether this hand may still be hit right now, per this variant's rules (e.g. Double Down Madness locks a hand after an Ace-opener's one follow-up card).</summary>
+    bool CanHit(Hand hand);
+
     bool CanDoubleDown(Hand hand);
+
+    /// <summary>
+    /// Whether doubling down ends the player's turn immediately (Standard,
+    /// War: yes - exactly one card, then done) or the player may keep
+    /// acting afterward (Double Down Madness: doubling can repeat).
+    /// </summary>
+    bool EndsTurnAfterDouble { get; }
 
     bool CanSplit(Hand hand);
 

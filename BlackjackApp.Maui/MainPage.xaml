@@ -21,13 +21,16 @@
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
                 <Border Grid.Column="0" BackgroundColor="#14261F" StrokeShape="RoundRectangle 6"
                         Padding="12,8" HorizontalOptions="Start">
-                    <Label x:Name="BalanceLabel" Text="Balance: $1,000" TextColor="White" FontSize="18" FontAttributes="Bold"/>
+                    <VerticalStackLayout Spacing="2">
+                        <Label x:Name="BalanceLabel" Text="Balance: $1,000" TextColor="White" FontSize="18" FontAttributes="Bold"/>
+                        <Label x:Name="VariantLabel" Text="Standard Blackjack" TextColor="#8FBFA9" FontSize="12"/>
+                    </VerticalStackLayout>
                 </Border>
                 <Button x:Name="SettingsButton" Grid.Column="1" Text="Settings" Padding="12,8" Clicked="SettingsButton_OnClicked"/>
             </Grid>
 
             <!-- Row 1: Dealer area - live cards from the real Deck/Hand -->
-            <Border Grid.Row="1" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
+            <Border x:Name="DealerAreaBorder" Grid.Row="1" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
                     BackgroundColor="#0E4433" Padding="8">
                 <VerticalStackLayout HorizontalOptions="Center" Spacing="6">
                     <Label Text="Dealer" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
@@ -41,7 +44,7 @@
                 Slots 2-5 stay as static placeholders until multi-hand
                 support is built.
             -->
-            <Border Grid.Row="2" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
+            <Border x:Name="PlayerAreaBorder" Grid.Row="2" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
                     BackgroundColor="#0E4433" Padding="8">
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="6">
                     <Border Grid.Column="0" Stroke="#8FBFA9" StrokeThickness="1" StrokeShape="RoundRectangle 6" Padding="4">

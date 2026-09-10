@@ -125,6 +125,20 @@ public class WarBlackjackVariantTests
     }
 
     [Test]
+    public void EndsTurnAfterDouble_DelegatesToStandardBlackjackRules()
+    {
+        Assert.That(_variant.EndsTurnAfterDouble, Is.True);
+    }
+
+    [Test]
+    public void CanHit_DelegatesToStandardBlackjackRules()
+    {
+        var bustHand = HandOf((Suit.Spades, Rank.King), (Suit.Hearts, Rank.Queen), (Suit.Clubs, Rank.Five));
+
+        Assert.That(_variant.CanHit(bustHand), Is.False);
+    }
+
+    [Test]
     public void ResolvePayout_BlackjackPaysThreeToTwo()
     {
         var playerHand = HandOf((Suit.Spades, Rank.Ace), (Suit.Hearts, Rank.King));

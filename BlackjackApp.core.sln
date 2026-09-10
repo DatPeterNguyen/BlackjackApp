@@ -4,8 +4,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackjackApp.core", "Blackj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackjackApp.Tests", "BlackjackApp.Tests\BlackjackApp.Tests.csproj", "{52930730-7E52-4143-B5A3-E282DBC323B2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackjackApp.Wpf", "BlackjackApp.Wpf\BlackjackApp.Wpf.csproj", "{CA817D51-BE23-40C6-BD47-979BC0AED3C7}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackjackApp.Maui", "BlackjackApp.Maui\BlackjackApp.Maui.csproj", "{583EAEE6-9E75-4AFC-9720-0F25FA0942E6}"
 EndProject
 Global
@@ -42,18 +40,6 @@ Global
 		{52930730-7E52-4143-B5A3-E282DBC323B2}.Release|x64.Build.0 = Release|Any CPU
 		{52930730-7E52-4143-B5A3-E282DBC323B2}.Release|x86.ActiveCfg = Release|Any CPU
 		{52930730-7E52-4143-B5A3-E282DBC323B2}.Release|x86.Build.0 = Release|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|x64.Build.0 = Debug|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Debug|x86.Build.0 = Debug|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|Any CPU.Build.0 = Release|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|x64.ActiveCfg = Release|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|x64.Build.0 = Release|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|x86.ActiveCfg = Release|Any CPU
-		{CA817D51-BE23-40C6-BD47-979BC0AED3C7}.Release|x86.Build.0 = Release|Any CPU
 		{583EAEE6-9E75-4AFC-9720-0F25FA0942E6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{583EAEE6-9E75-4AFC-9720-0F25FA0942E6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{583EAEE6-9E75-4AFC-9720-0F25FA0942E6}.Debug|x64.ActiveCfg = Debug|Any CPU
