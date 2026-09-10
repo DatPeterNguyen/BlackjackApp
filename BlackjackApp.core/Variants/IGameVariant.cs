@@ -18,6 +18,22 @@ public interface IGameVariant
     /// </summary>
     void DealInitialCards(Deck deck, Hand playerHand, Hand dealerHand);
 
+    /// <summary>
+    /// Deals ONLY the dealer's opening hand for this variant. Call this
+    /// exactly once per round, regardless of how many player hands are in
+    /// play (1-5) - there's always a single shared dealer hand that every
+    /// player hand is played and resolved against.
+    /// </summary>
+    void DealDealerOpeningHand(Deck deck, Hand dealerHand);
+
+    /// <summary>
+    /// Deals ONLY one player hand's opening cards for this variant (2 cards
+    /// for Standard/War, 1 for Double Down Madness). Call this once per
+    /// active player hand slot (1-5), after DealDealerOpeningHand has
+    /// already dealt the round's single shared dealer hand.
+    /// </summary>
+    void DealPlayerOpeningHand(Deck deck, Hand playerHand);
+
     /// <summary>Draws one card from the shoe into the given hand.</summary>
     void Hit(Deck deck, Hand hand);
 

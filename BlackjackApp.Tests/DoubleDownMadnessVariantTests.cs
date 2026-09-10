@@ -35,6 +35,30 @@ public class DoubleDownMadnessVariantTests
     }
 
     [Test]
+    public void DealDealerOpeningHand_GivesTheDealerExactlyTwoCards()
+    {
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var dealerHand = new Hand();
+
+        _variant.DealDealerOpeningHand(deck, dealerHand);
+
+        Assert.That(dealerHand.Cards, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void DealPlayerOpeningHand_GivesOnePlayerHandExactlyOneCard()
+    {
+        // Multi-hand rounds call this once per active hand slot, separately
+        // from DealDealerOpeningHand which is only called once per round.
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var playerHand = new Hand();
+
+        _variant.DealPlayerOpeningHand(deck, playerHand);
+
+        Assert.That(playerHand.Cards, Has.Count.EqualTo(1));
+    }
+
+    [Test]
     public void CanSplit_IsAlwaysFalse()
     {
         var pairOfEights = HandOf((Suit.Spades, Rank.Eight), (Suit.Hearts, Rank.Eight));

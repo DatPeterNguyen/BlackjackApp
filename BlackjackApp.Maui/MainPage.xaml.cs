@@ -1,56 +1,193 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using BlackjackApp.core.Economy;
 using BlackjackApp.core.Models;
 using BlackjackApp.core.Variants;
 using BlackjackApp.Maui.Views;
+using Microsoft.Maui.Controls.Shapes;
+using Microsoft.Maui.Layouts;
 
 namespace BlackjackApp.Maui;
 
 /// <summary>
-/// MOBILE PORT of the WPF MainWindow.xaml.cs, now variant-aware: _variant
-/// is an IGameVariant rather than hardcoded StandardBlackjackVariant, so
-/// whichever variant Settings selects (Standard / Double Down Madness /
-/// War) actually gets dealt and played here, not just tested in isolation.
+/// MOBILE PORT of the WPF MainWindow.xaml.cs, now both variant-aware AND
+/// multi-hand-aware. _variant is an IGameVariant (Standard / Double Down
+/// Madness / War), and the player can have 1-5 simultaneous hand slots
+/// (_hands), each with its own independent bet, all played and resolved
+/// against the SAME shared dealer hand (per the design doc's 1-5 hand
+/// setting).
 ///
-/// The three variants have genuinely different round shapes:
-///  - Standard: 2 cards each, double ends the turn immediately.
-///  - Double Down Madness: player starts on 1 card, doubling can repeat
-///    and doesn't end the turn (EndsTurnAfterDouble is false), and an
-///    Ace-opener hand locks itself after its one follow-up card.
-///  - War: DealInitialCards already resolves the War card stage AND deals
-///    the second blackjack cards in one call (see WarBlackjackVariant) -
-///    this page separately applies the War side-bet payout right after
-///    dealing, then plays out completely normal blackjack from there.
-/// None of that needed a MainPage rewrite per variant - IGameVariant.
-/// CanHit / EndsTurnAfterDouble are enough for one shared round loop to
-/// handle all three correctly.
+/// Turn order: hands play left to right. _activeHandIndex is whichever
+/// slot Hit/Stand/Double currently apply to; when that hand finishes
+/// (bust, stand, doubled-and-done, or can no longer act), play advances to
+/// the next unfinished hand. Once every hand is finished, EndRound plays
+/// the dealer once and resolves every hand's outcome/payout against that
+/// one dealer hand.
+///
+/// Before a round starts, tapping a hand slot selects it as the current
+/// betting target - chip taps and Clear apply to whichever slot is
+/// selected, so each hand's bet is sized fully independently (per the
+/// "just duplicate the single-hand pattern" approach agreed on, rather
+/// than a separate chip tray per hand).
 /// </summary>
 public partial class MainPage : ContentPage
 {
     private IGameVariant _variant = new StandardBlackjackVariant();
     private int _deckCount = 4;
+    private int _handCount = 1;
 
-    /// <summary>Set when Settings is saved mid-round - applied at the start of the next Deal instead of immediately, so an in-progress hand never has its rules swapped out from under it.</summary>
+    /// <summary>Set when Settings is saved mid-round - applied at the start of the next Deal instead of immediately, so an in-progress round never has its rules (or hand count) swapped out from under it.</summary>
     private IGameVariant? _pendingVariant;
     private int? _pendingDeckCount;
+    private int? _pendingHandCount;
 
     private Deck? _deck;
-    private Hand _playerHand = new();
     private Hand _dealerHand = new();
 
-    private decimal _balance = 1000m;
-    private int _currentBet;
+    /// <summary>Owns the balance and enforces the table's $1-$10,000 per-hand betting limits (see ChipWallet).</summary>
+    private readonly ChipWallet _wallet = new(startingBalance: 1000m);
+
+    /// <summary>One entry per active hand slot (1-5), rebuilt whenever the hand count changes.</summary>
+    private List<PlayerHandSlot> _hands = new();
+
+    /// <summary>The dynamically-built UI views for each hand slot, index-matched to _hands.</summary>
+    private readonly List<HandSlotView> _handSlotViews = new();
+
+    /// <summary>Which hand slot chip taps/Clear currently target, before a round starts.</summary>
+    private int _selectedBetIndex;
+
+    /// <summary>Which hand slot Hit/Stand/Double currently apply to; -1 when no round is in progress.</summary>
+    private int _activeHandIndex = -1;
+
     private bool _roundInProgress;
 
-    /// <summary>Set right after dealing when the active variant is War Blackjack, so EndRound can prepend the War side-bet result to whatever the blackjack hand's own outcome message is.</summary>
-    private string _resultPrefix = "";
+    /// <summary>Card image height used inside a hand slot - smaller than the dealer's so several fit across one slot's width before wrapping.</summary>
+    private const double HandSlotCardHeight = 56;
+
+    /// <summary>Real, explicit width for a hand slot's card row - wide enough to fit 3 HandSlotCardHeight-sized cards per row before wrapping.</summary>
+    private const double HandSlotCardsWidth = 140;
+
+    /// <summary>Outer hand slot Border width - HandSlotCardsWidth plus room for its Padding/Border.</summary>
+    private const double HandSlotBorderWidth = HandSlotCardsWidth + 16;
 
     public MainPage()
     {
         InitializeComponent();
+        BuildHandSlots();
         UpdateBalanceText();
         UpdateVariantLabel();
         UpdateTableColors();
+    }
+
+    /// <summary>Bundles the dynamically-created views for one hand slot, since XAML can't name a variable (1-5) number of them.</summary>
+    private sealed class HandSlotView
+    {
+        public required Border Border { get; init; }
+        public required FlexLayout CardsLayout { get; init; }
+        public required Image ChipImage { get; init; }
+        public required Label BetLabel { get; init; }
+        public required Label ValueLabel { get; init; }
+        public required Label ResultLabel { get; init; }
+    }
+
+    /// <summary>
+    /// (Re)builds _hands and their matching UI views for the current
+    /// _handCount. Called on startup and whenever the hand count changes in
+    /// Settings. Resets betting/turn selection back to hand 0.
+    /// </summary>
+    private void BuildHandSlots()
+    {
+        _hands = Enumerable.Range(0, _handCount).Select(_ => new PlayerHandSlot()).ToList();
+        _handSlotViews.Clear();
+        PlayerHandsLayout.Children.Clear();
+        _selectedBetIndex = 0;
+        _activeHandIndex = -1;
+
+        // All In only makes sense when there's a single hand to shove
+        // everything onto - with multiple hands the player sizes each one
+        // independently, so an "all in" button would be ambiguous.
+        AllInButton.IsVisible = _handCount == 1;
+        TotalResultLabel.IsVisible = false;
+        TotalResultLabel.Text = "";
+
+        for (var i = 0; i < _handCount; i++)
+        {
+            var cardsLayout = new FlexLayout
+            {
+                Direction = FlexDirection.Row,
+                Wrap = FlexWrap.Wrap,
+                JustifyContent = FlexJustify.Center,
+                AlignItems = FlexAlignItems.Center,
+                HorizontalOptions = LayoutOptions.Fill,
+                WidthRequest = HandSlotCardsWidth, // pinned explicitly - a Fill request alone wasn't reliably resolving to a real width inside the stack
+            };
+            var chipImage = new Image { HeightRequest = 28 };
+            var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
+            var valueLabel = new Label { Text = "", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
+            var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFD700"), HorizontalOptions = LayoutOptions.Center, FontSize = 10, FontAttributes = FontAttributes.Bold };
+
+            var content = new VerticalStackLayout
+            {
+                HorizontalOptions = LayoutOptions.Fill,
+                Spacing = 2,
+                Children = { cardsLayout, chipImage, betLabel, valueLabel, resultLabel },
+            };
+
+            var border = new Border
+            {
+                Stroke = Color.FromArgb("#8FBFA9"),
+                StrokeThickness = 1,
+                StrokeShape = new RoundRectangle { CornerRadius = 6 },
+                Padding = 4,
+                Margin = 2,
+                WidthRequest = HandSlotBorderWidth,
+                HorizontalOptions = LayoutOptions.Start,
+                Content = content,
+            };
+
+            var handIndex = i; // capture for the closure below
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += (_, _) => SelectHandForBetting(handIndex);
+            border.GestureRecognizers.Add(tap);
+
+            _handSlotViews.Add(new HandSlotView
+            {
+                Border = border,
+                CardsLayout = cardsLayout,
+                ChipImage = chipImage,
+                BetLabel = betLabel,
+                ValueLabel = valueLabel,
+                ResultLabel = resultLabel,
+            });
+
+            PlayerHandsLayout.Children.Add(border);
+        }
+
+        RefreshHandSlotHighlights();
+    }
+
+    /// <summary>Before a round: tapping a hand slot makes it the current betting target. Ignored mid-round, since bets are locked in once dealt.</summary>
+    private void SelectHandForBetting(int index)
+    {
+        if (_roundInProgress)
+        {
+            return;
+        }
+
+        _selectedBetIndex = index;
+        RefreshHandSlotHighlights();
+    }
+
+    /// <summary>Highlights whichever hand is currently relevant - the betting target pre-round, or the hand in play mid-round.</summary>
+    private void RefreshHandSlotHighlights()
+    {
+        for (var i = 0; i < _handSlotViews.Count; i++)
+        {
+            var isHighlighted = _roundInProgress ? i == _activeHandIndex : i == _selectedBetIndex;
+            _handSlotViews[i].Border.Stroke = isHighlighted ? Color.FromArgb("#FFD700") : Color.FromArgb("#8FBFA9");
+            _handSlotViews[i].Border.StrokeThickness = isHighlighted ? 3 : 1;
+        }
     }
 
     private void ChipButton_OnClicked(object? sender, EventArgs e)
@@ -62,9 +199,23 @@ public partial class MainPage : ContentPage
 
         if (sender is Button { CommandParameter: string tagValue } && int.TryParse(tagValue, out var chipValue))
         {
-            _currentBet += chipValue;
-            CurrentBetLabel.Text = $"Current Bet: ${_currentBet:N0}";
-            UpdateBetChipDisplay();
+            var slot = _hands[_selectedBetIndex];
+
+            if (slot.Bet >= ChipWallet.TableMaximum)
+            {
+                ResultLabel.Text = $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand.";
+                return;
+            }
+
+            // Clamp rather than reject outright, so tapping a big chip near
+            // the cap still places as much of it as the table allows.
+            var room = ChipWallet.RemainingRoomUnderMax(slot.Bet);
+            slot.Bet += (int)Math.Min(chipValue, room);
+            UpdateHandSlotBetDisplay(_selectedBetIndex);
+            UpdateTotalWageredText();
+            ResultLabel.Text = slot.Bet >= ChipWallet.TableMaximum
+                ? $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand."
+                : "";
         }
     }
 
@@ -75,39 +226,77 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        _currentBet = 0;
-        CurrentBetLabel.Text = "Current Bet: $0";
-        UpdateBetChipDisplay();
+        _hands[_selectedBetIndex].Bet = 0;
+        UpdateHandSlotBetDisplay(_selectedBetIndex);
+        UpdateTotalWageredText();
+    }
+
+    /// <summary>
+    /// Shoves the entire balance (clamped to the table max) onto the single
+    /// hand's bet - only wired up/visible when playing one hand at a time,
+    /// since splitting "everything" across several independently-sized
+    /// hands wouldn't have one obvious meaning.
+    /// </summary>
+    private void AllInButton_OnClicked(object? sender, EventArgs e)
+    {
+        if (_roundInProgress || _handCount != 1)
+        {
+            return;
+        }
+
+        var slot = _hands[_selectedBetIndex];
+        var allInAmount = Math.Min(_wallet.Balance, ChipWallet.TableMaximum);
+
+        if (allInAmount < ChipWallet.TableMinimum)
+        {
+            ResultLabel.Text = "Not enough chips to go all in.";
+            return;
+        }
+
+        slot.Bet = (int)allInAmount;
+        UpdateHandSlotBetDisplay(_selectedBetIndex);
+        UpdateTotalWageredText();
+        ResultLabel.Text = allInAmount >= ChipWallet.TableMaximum
+            ? $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand."
+            : "";
     }
 
     private async void SettingsButton_OnClicked(object? sender, EventArgs e)
     {
-        var settingsPage = new SettingsPage(_variant, _deckCount);
+        var settingsPage = new SettingsPage(_variant, _deckCount, _handCount);
         settingsPage.SettingsSaved += OnSettingsSaved;
         await Navigation.PushModalAsync(settingsPage);
     }
 
-    private void OnSettingsSaved(IGameVariant variant, int deckCount)
+    private void OnSettingsSaved(IGameVariant variant, int deckCount, int handCount)
     {
         if (_roundInProgress)
         {
-            // Never swap the rules out from under a hand that's already
-            // dealt under the old variant's shape - queue it instead and
-            // apply it once EndRound finishes this hand.
+            // Never swap the rules (or the number of hand slots) out from
+            // under a round that's already dealt - queue it instead and
+            // apply it once EndRound finishes this round.
             _pendingVariant = variant;
             _pendingDeckCount = deckCount;
-            ResultLabel.Text = _resultPrefix + "Settings saved - will apply once this round finishes.";
+            _pendingHandCount = handCount;
+            ResultLabel.Text = "Settings saved - will apply once this round finishes.";
             return;
         }
 
-        ApplyVariantChange(variant, deckCount);
+        ApplyVariantChange(variant, deckCount, handCount);
     }
 
-    private void ApplyVariantChange(IGameVariant variant, int deckCount)
+    private void ApplyVariantChange(IGameVariant variant, int deckCount, int handCount)
     {
         _variant = variant;
         _deckCount = deckCount;
         _deck = null; // force a fresh shoe built at the new deck count on the next Deal
+
+        if (handCount != _handCount)
+        {
+            _handCount = handCount;
+            BuildHandSlots();
+        }
+
         UpdateVariantLabel();
         UpdateTableColors();
     }
@@ -119,155 +308,228 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        if (_currentBet <= 0)
+        if (_hands.Any(h => h.Bet <= 0))
         {
-            ResultLabel.Text = "Place a bet before dealing.";
+            ResultLabel.Text = "Place a bet on every hand before dealing.";
             return;
         }
 
-        if (_currentBet > _balance)
+        if (_hands.Any(h => !ChipWallet.IsWithinTableLimits(h.Bet)))
+        {
+            ResultLabel.Text = $"Bets must be between ${ChipWallet.TableMinimum:N0} and ${ChipWallet.TableMaximum:N0} per hand.";
+            return;
+        }
+
+        var totalBet = _hands.Sum(h => h.Bet);
+
+        if (!_wallet.TryDeduct(totalBet))
         {
             ResultLabel.Text = "You don't have enough chips for that bet.";
             return;
         }
 
-        // Build a fresh shoe the first time, once it's running low, or
-        // once the deck count changed in Settings. Reshuffling only
-        // between rounds (never mid-hand) keeps this simple for now.
-        if (_deck is null || _deck.CardsRemaining < 15)
+        // Build a fresh shoe the first time, once it's running low (scaled
+        // by how many hands are being dealt this round), or once the deck
+        // count changed in Settings. Reshuffling only between rounds
+        // (never mid-round) keeps this simple for now.
+        if (_deck is null || _deck.CardsRemaining < 15 * _handCount)
         {
             _deck = new Deck(numberOfDecks: _deckCount);
         }
 
-        _playerHand = new Hand();
+        // Fresh hands for the new round, keeping each slot's bet.
+        var bets = _hands.Select(h => h.Bet).ToList();
+        _hands = bets.Select(bet => new PlayerHandSlot { Bet = bet }).ToList();
+
         _dealerHand = new Hand();
-        _resultPrefix = "";
-        _variant.DealInitialCards(_deck, _playerHand, _dealerHand);
+        _variant.DealDealerOpeningHand(_deck, _dealerHand);
 
-        _balance -= _currentBet;
-
-        // War Blackjack's DealInitialCards already dealt and "locked in"
-        // the War card stage (see WarBlackjackVariant) - resolve that side
-        // bet's payout now, before the blackjack hand continues.
-        if (_variant is WarBlackjackVariant warVariant)
+        foreach (var slot in _hands)
         {
-            var warPayout = warVariant.ResolveWarPayout(_playerHand, _dealerHand, _currentBet);
-            _balance += warPayout;
-            _resultPrefix = warVariant.PlayerWinsWar(_playerHand, _dealerHand)
-                ? $"War: you win ${warPayout:N0}! "
-                : $"War: dealer wins the ${-warPayout:N0} side bet. ";
+            _variant.DealPlayerOpeningHand(_deck, slot.Hand);
+
+            // War Blackjack's DealPlayerOpeningHand already dealt this
+            // hand's own War card - resolve that side bet now, per hand,
+            // against the one shared dealer hand's War card.
+            if (_variant is WarBlackjackVariant warVariant)
+            {
+                var warPayout = warVariant.ResolveWarPayout(slot.Hand, _dealerHand, slot.Bet);
+                _wallet.Add(warPayout);
+                slot.ResultText = warVariant.PlayerWinsWar(slot.Hand, _dealerHand)
+                    ? $"War: win ${warPayout:N0}! "
+                    : $"War: lose ${-warPayout:N0}. ";
+            }
+
+            // A natural blackjack finishes this hand immediately, but other
+            // hands may still need to play - it just gets skipped in turn
+            // order and resolved together with everyone else in EndRound.
+            if (slot.Hand.IsBlackjack)
+            {
+                slot.IsFinished = true;
+            }
         }
 
         UpdateBalanceText();
+        UpdateTotalWageredText();
 
         _roundInProgress = true;
-        ResultLabel.Text = _resultPrefix;
-        RenderHands(hideHoleCard: true);
+        ResultLabel.Text = "";
+        RenderAllHandSlots(hideHoleCard: true);
         SetRoundInProgress(true);
 
-        if (_playerHand.IsBlackjack)
+        _activeHandIndex = _hands.FindIndex(h => !h.IsFinished);
+
+        if (_activeHandIndex == -1)
         {
             EndRound();
+        }
+        else
+        {
+            RefreshHandSlotHighlights();
         }
     }
 
     private void HitButton_OnClicked(object? sender, EventArgs e)
     {
-        if (!_roundInProgress || _deck is null)
+        if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
             return;
         }
 
-        if (!_variant.CanHit(_playerHand))
+        var slot = _hands[_activeHandIndex];
+
+        if (!_variant.CanHit(slot.Hand))
         {
-            ResultLabel.Text = _resultPrefix + "This hand can't be hit again.";
+            ResultLabel.Text = "This hand can't be hit again.";
             return;
         }
 
-        _variant.Hit(_deck, _playerHand);
-        RenderHands(hideHoleCard: true);
-        ContinueOrEndTurnAfterAction(cameFromDouble: false);
+        _variant.Hit(_deck, slot.Hand);
+        RenderHandSlot(_activeHandIndex);
+        ContinueOrAdvance(cameFromDouble: false);
     }
 
     private void StandButton_OnClicked(object? sender, EventArgs e)
     {
-        if (!_roundInProgress || _deck is null)
+        if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
             return;
         }
 
-        EndRound();
+        _hands[_activeHandIndex].IsFinished = true;
+        AdvanceToNextHandOrEndRound();
     }
 
     private void DoubleButton_OnClicked(object? sender, EventArgs e)
     {
-        if (!_roundInProgress || _deck is null)
+        if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
             return;
         }
 
-        if (!_variant.CanDoubleDown(_playerHand))
+        var slot = _hands[_activeHandIndex];
+
+        if (!_variant.CanDoubleDown(slot.Hand))
         {
-            ResultLabel.Text = _resultPrefix + "Can't double down on this hand right now.";
+            ResultLabel.Text = "Can't double down on this hand right now.";
             return;
         }
 
-        if (_currentBet > _balance)
+        // Double Down Madness allows doubling repeatedly, each based on the
+        // current wager, so an unchecked run can blow past the table max
+        // fast ($10 -> $20 -> $40 -> $80 -> ...). Block the double outright
+        // once doubling again would exceed it.
+        var doubledBet = slot.Bet * 2;
+
+        if (!ChipWallet.IsWithinTableLimits(doubledBet))
         {
-            ResultLabel.Text = _resultPrefix + "Not enough chips to double down.";
+            ResultLabel.Text = $"Doubling would exceed the table max of ${ChipWallet.TableMaximum:N0}.";
             return;
         }
 
-        // Double Down Madness allows doubling repeatedly, each based on
-        // the current wager - the same "double the current bet" math
-        // covers Standard's single double just as well.
-        _balance -= _currentBet;
-        _currentBet *= 2;
+        if (!_wallet.TryDeduct(slot.Bet))
+        {
+            ResultLabel.Text = "Not enough chips to double down.";
+            return;
+        }
+
+        slot.Bet = doubledBet;
         UpdateBalanceText();
-        CurrentBetLabel.Text = $"Current Bet: ${_currentBet:N0}";
-        UpdateBetChipDisplay();
+        UpdateHandSlotBetDisplay(_activeHandIndex);
+        UpdateTotalWageredText();
 
-        _variant.Hit(_deck, _playerHand);
-        RenderHands(hideHoleCard: true);
-        ContinueOrEndTurnAfterAction(cameFromDouble: true);
+        _variant.Hit(_deck, slot.Hand);
+        RenderHandSlot(_activeHandIndex);
+        ContinueOrAdvance(cameFromDouble: true);
     }
 
     private void SplitButton_OnClicked(object? sender, EventArgs e)
     {
-        ResultLabel.Text = _resultPrefix + "Split isn't wired up yet - multi-hand support is still coming.";
+        ResultLabel.Text = "Split isn't wired up yet.";
     }
 
     /// <summary>
-    /// Shared post-Hit/post-Double bookkeeping: ends the round on a bust,
-    /// ends it if this variant's rule says doubling finishes the turn, and
-    /// otherwise ends it once the hand can neither hit nor double any
-    /// further (e.g. Double Down Madness's Ace-opener lock finally closing).
-    /// Anything else leaves the round in progress for more player actions.
+    /// Shared post-Hit/post-Double bookkeeping for the active hand: ends
+    /// its turn on a bust, ends it if this variant's rule says doubling
+    /// finishes the turn, and otherwise ends it once the hand can neither
+    /// hit nor double any further (e.g. Double Down Madness's Ace-opener
+    /// lock finally closing). Either way, play then advances to the next
+    /// unfinished hand, or to EndRound if this was the last one.
     /// </summary>
-    private void ContinueOrEndTurnAfterAction(bool cameFromDouble)
+    private void ContinueOrAdvance(bool cameFromDouble)
     {
-        if (_playerHand.IsBust)
+        var slot = _hands[_activeHandIndex];
+
+        if (slot.Hand.IsBust)
         {
-            EndRound();
+            slot.IsFinished = true;
+            AdvanceToNextHandOrEndRound();
             return;
         }
 
         if (cameFromDouble && _variant.EndsTurnAfterDouble)
         {
-            EndRound();
+            slot.IsFinished = true;
+            AdvanceToNextHandOrEndRound();
             return;
         }
 
-        if (!_variant.CanHit(_playerHand) && !_variant.CanDoubleDown(_playerHand))
+        if (!_variant.CanHit(slot.Hand) && !_variant.CanDoubleDown(slot.Hand))
+        {
+            slot.IsFinished = true;
+            AdvanceToNextHandOrEndRound();
+        }
+    }
+
+    private void AdvanceToNextHandOrEndRound()
+    {
+        var nextIndex = -1;
+
+        for (var i = _activeHandIndex + 1; i < _hands.Count; i++)
+        {
+            if (!_hands[i].IsFinished)
+            {
+                nextIndex = i;
+                break;
+            }
+        }
+
+        if (nextIndex == -1)
         {
             EndRound();
+        }
+        else
+        {
+            _activeHandIndex = nextIndex;
+            RefreshHandSlotHighlights();
         }
     }
 
     /// <summary>
-    /// Plays out the dealer's hand (skipped if the player already busted),
-    /// resolves the outcome, applies the payout to the balance, shows the
-    /// result, and resets the table so a new bet can be placed.
+    /// Plays out the dealer's hand once (skipped only if every player hand
+    /// already busted), then resolves each hand's own outcome and payout
+    /// against that one shared dealer hand, applies every hand's result to
+    /// the balance, and resets the table so a new round of bets can be placed.
     /// </summary>
     private void EndRound()
     {
@@ -276,33 +538,77 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        if (!_playerHand.IsBust)
+        if (_hands.Any(h => !h.Hand.IsBust))
         {
             _variant.PlayDealerHand(_deck, _dealerHand);
         }
 
-        var outcome = _variant.DetermineOutcome(_playerHand, _dealerHand);
-        var payout = _variant.ResolvePayout(_playerHand, _dealerHand, _currentBet);
+        var totalNet = 0m;
 
-        // The original bet was already deducted up front, so returning to
-        // the balance means giving back the bet itself plus/minus payout.
-        _balance += _currentBet + payout;
+        foreach (var slot in _hands)
+        {
+            var outcome = _variant.DetermineOutcome(slot.Hand, _dealerHand);
+            var payout = _variant.ResolvePayout(slot.Hand, _dealerHand, slot.Bet);
+
+            // The original bet was already deducted up front, so returning
+            // to the balance means giving back the bet itself plus/minus payout.
+            _wallet.Add(slot.Bet + payout);
+            slot.ResultText += DescribeOutcome(outcome, payout);
+            slot.IsFinished = true;
+
+            // payout alone is the net win/loss on this hand (it excludes the
+            // returned bet); War's side-bet payout, added to the wallet
+            // earlier in DealButton_OnClicked, is folded in via ResultText
+            // there but not into this total - only the blackjack-stage
+            // result is summed here to avoid double counting.
+            totalNet += payout;
+        }
+
+        // Only worth showing when there's more than one hand to sum across -
+        // a single hand's own result label already says the same thing.
+        if (_hands.Count > 1)
+        {
+            TotalResultLabel.IsVisible = true;
+            TotalResultLabel.Text = totalNet switch
+            {
+                > 0 => $"Total: won ${totalNet:N0}",
+                < 0 => $"Total: lost ${-totalNet:N0}",
+                _ => "Total: broke even",
+            };
+        }
+        else
+        {
+            TotalResultLabel.IsVisible = false;
+            TotalResultLabel.Text = "";
+        }
+
         UpdateBalanceText();
-
-        RenderHands(hideHoleCard: false);
-        ResultLabel.Text = _resultPrefix + DescribeOutcome(outcome, payout);
+        RenderAllHandSlots(hideHoleCard: false);
 
         _roundInProgress = false;
-        _currentBet = 0;
-        CurrentBetLabel.Text = "Current Bet: $0";
-        UpdateBetChipDisplay();
-        SetRoundInProgress(false);
+        _activeHandIndex = -1;
 
-        if (_pendingVariant is not null && _pendingDeckCount is not null)
+        foreach (var slot in _hands)
         {
-            ApplyVariantChange(_pendingVariant, _pendingDeckCount.Value);
+            slot.Bet = 0;
+        }
+
+        UpdateTotalWageredText();
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            UpdateHandSlotBetDisplay(i);
+        }
+
+        SetRoundInProgress(false);
+        _selectedBetIndex = 0;
+        RefreshHandSlotHighlights();
+
+        if (_pendingVariant is not null && _pendingDeckCount is not null && _pendingHandCount is not null)
+        {
+            ApplyVariantChange(_pendingVariant, _pendingDeckCount.Value, _pendingHandCount.Value);
             _pendingVariant = null;
             _pendingDeckCount = null;
+            _pendingHandCount = null;
         }
     }
 
@@ -317,23 +623,23 @@ public partial class MainPage : ContentPage
         _ => "",
     };
 
-    /// <summary>
-    /// Redraws the dealer's cards and Hand 1's cards from current game
-    /// state. While hideHoleCard is true, the dealer's second card is
-    /// shown face-down and only the upcard's value is displayed.
-    /// </summary>
-    private void RenderHands(bool hideHoleCard)
+    private void RenderAllHandSlots(bool hideHoleCard)
     {
-        PlayerHandCardsLayout.Children.Clear();
-        foreach (var card in _playerHand.Cards)
+        RenderDealerHand(hideHoleCard);
+
+        for (var i = 0; i < _hands.Count; i++)
         {
-            PlayerHandCardsLayout.Children.Add(CreateCardImage(CardImageFile(card), 80));
+            RenderHandSlot(i);
         }
+    }
 
-        PlayerHandValueLabel.Text = _playerHand.Cards.Count > 0
-            ? $"Value: {_playerHand.GetBestValue().Value}"
-            : "";
-
+    /// <summary>
+    /// Redraws the dealer's cards from current game state. While
+    /// hideHoleCard is true, the dealer's second card is shown face-down
+    /// and only the upcard's value is displayed.
+    /// </summary>
+    private void RenderDealerHand(bool hideHoleCard)
+    {
         DealerCardsLayout.Children.Clear();
         for (var i = 0; i < _dealerHand.Cards.Count; i++)
         {
@@ -356,21 +662,40 @@ public partial class MainPage : ContentPage
         }
     }
 
-    /// <summary>Picks the largest chip denomination at or under the current bet, purely for display.</summary>
-    private void UpdateBetChipDisplay()
+    /// <summary>Redraws one hand slot's cards and value from current game state. The player's own cards are always shown face-up.</summary>
+    private void RenderHandSlot(int index)
     {
-        PlayerHandBetLabel.Text = $"Bet: ${_currentBet:N0}";
+        var slot = _hands[index];
+        var view = _handSlotViews[index];
 
-        if (_currentBet <= 0)
+        view.CardsLayout.Children.Clear();
+        foreach (var card in slot.Hand.Cards)
         {
-            PlayerHandChipImage.Source = null;
+            view.CardsLayout.Children.Add(CreateCardImage(CardImageFile(card), HandSlotCardHeight));
+        }
+
+        view.ValueLabel.Text = slot.Hand.Cards.Count > 0 ? $"Value: {slot.Hand.GetBestValue().Value}" : "";
+        view.ResultLabel.Text = slot.ResultText;
+    }
+
+    /// <summary>Updates one hand slot's bet label and chip-denomination image, purely for display.</summary>
+    private void UpdateHandSlotBetDisplay(int index)
+    {
+        var slot = _hands[index];
+        var view = _handSlotViews[index];
+        view.BetLabel.Text = $"Bet: ${slot.Bet:N0}";
+
+        if (slot.Bet <= 0)
+        {
+            view.ChipImage.Source = null;
             return;
         }
 
-        int[] denominations = [10000, 1000, 100, 25, 10, 5, 1];
-        var chipValue = denominations.FirstOrDefault(d => d <= _currentBet, 1);
-        PlayerHandChipImage.Source = ImageSource.FromFile($"chip_{chipValue}.png");
+        var chipValue = ChipWallet.Denominations.Reverse().FirstOrDefault(d => d <= slot.Bet, 1m);
+        view.ChipImage.Source = ImageSource.FromFile($"chip_{(int)chipValue}.png");
     }
+
+    private void UpdateTotalWageredText() => CurrentBetLabel.Text = $"Total Wagered: ${_hands.Sum(h => h.Bet):N0}";
 
     private void SetRoundInProgress(bool roundInProgress)
     {
@@ -382,7 +707,7 @@ public partial class MainPage : ContentPage
         ChipButtonsLayout.IsEnabled = !roundInProgress;
     }
 
-    private void UpdateBalanceText() => BalanceLabel.Text = $"Balance: ${_balance:N0}";
+    private void UpdateBalanceText() => BalanceLabel.Text = $"Balance: ${_wallet.Balance:N0}";
 
     private void UpdateVariantLabel() => VariantLabel.Text = _variant.Name;
 

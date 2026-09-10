@@ -76,6 +76,17 @@ public class WarBlackjackVariant : IGameVariant
         DealSecondCards(deck, playerHand, dealerHand);
     }
 
+    /// <summary>
+    /// Deals just the dealer's opening hand for a multi-hand round: one
+    /// shared War card plus the second blackjack card, dealt once per
+    /// round. Every player hand's own War card (from DealPlayerOpeningHand)
+    /// is compared against this same dealer hand's first card.
+    /// </summary>
+    public void DealDealerOpeningHand(Deck deck, Hand dealerHand) => _blackjackRules.DealDealerOpeningHand(deck, dealerHand);
+
+    /// <summary>Deals one player hand's own War card plus its second blackjack card - call once per active hand slot.</summary>
+    public void DealPlayerOpeningHand(Deck deck, Hand playerHand) => _blackjackRules.DealPlayerOpeningHand(deck, playerHand);
+
     public void Hit(Deck deck, Hand hand) => _blackjackRules.Hit(deck, hand);
 
     public bool CanHit(Hand hand) => _blackjackRules.CanHit(hand);

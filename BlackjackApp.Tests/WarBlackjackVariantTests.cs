@@ -125,6 +125,32 @@ public class WarBlackjackVariantTests
     }
 
     [Test]
+    public void DealDealerOpeningHand_GivesTheDealerExactlyTwoCards()
+    {
+        // The dealer's War card plus their second blackjack card, dealt
+        // together and shared across every player hand in a multi-hand round.
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var dealerHand = new Hand();
+
+        _variant.DealDealerOpeningHand(deck, dealerHand);
+
+        Assert.That(dealerHand.Cards, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void DealPlayerOpeningHand_GivesOnePlayerHandExactlyTwoCards()
+    {
+        // This hand's own War card plus its second blackjack card - called
+        // once per active hand slot, separately from DealDealerOpeningHand.
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var playerHand = new Hand();
+
+        _variant.DealPlayerOpeningHand(deck, playerHand);
+
+        Assert.That(playerHand.Cards, Has.Count.EqualTo(2));
+    }
+
+    [Test]
     public void EndsTurnAfterDouble_DelegatesToStandardBlackjackRules()
     {
         Assert.That(_variant.EndsTurnAfterDouble, Is.True);

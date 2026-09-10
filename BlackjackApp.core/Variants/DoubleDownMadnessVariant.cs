@@ -33,6 +33,16 @@ public class DoubleDownMadnessVariant : IGameVariant
         dealerHand.AddCard(deck.Draw());
     }
 
+    /// <summary>Deals just the dealer's two-card opening hand - call once per round, shared across every player hand.</summary>
+    public void DealDealerOpeningHand(Deck deck, Hand dealerHand)
+    {
+        dealerHand.AddCard(deck.Draw());
+        dealerHand.AddCard(deck.Draw());
+    }
+
+    /// <summary>Deals just one player hand's ONE-card opening hand - call once per active hand slot.</summary>
+    public void DealPlayerOpeningHand(Deck deck, Hand playerHand) => playerHand.AddCard(deck.Draw());
+
     public void Hit(Deck deck, Hand hand) => hand.AddCard(deck.Draw());
 
     /// <summary>

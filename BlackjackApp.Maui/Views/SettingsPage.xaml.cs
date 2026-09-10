@@ -6,17 +6,16 @@ using BlackjackApp.core.Variants;
 namespace BlackjackApp.Maui.Views;
 
 /// <summary>
-/// Deck count and variant are now real - saving fires SettingsSaved so
-/// MainPage can swap in the chosen IGameVariant and shoe size. Hand count
-/// is still a placeholder; nothing consumes it yet since multi-hand support
-/// isn't built.
+/// Deck count, hand count, and variant are all real now - saving fires
+/// SettingsSaved so MainPage can swap in the chosen IGameVariant, shoe
+/// size, and number of simultaneous player hands (1-5).
 /// </summary>
 public partial class SettingsPage : ContentPage
 {
-    /// <summary>Raised when Save is tapped, carrying the chosen variant instance and deck count.</summary>
-    public event Action<IGameVariant, int>? SettingsSaved;
+    /// <summary>Raised when Save is tapped, carrying the chosen variant instance, deck count, and hand count.</summary>
+    public event Action<IGameVariant, int, int>? SettingsSaved;
 
-    public SettingsPage(IGameVariant currentVariant, int currentDeckCount)
+    public SettingsPage(IGameVariant currentVariant, int currentDeckCount, int currentHandCount)
     {
         InitializeComponent();
 
@@ -24,7 +23,7 @@ public partial class SettingsPage : ContentPage
         DeckCountPicker.SelectedIndex = Math.Clamp(currentDeckCount - 1, 0, 5);
 
         HandCountPicker.ItemsSource = new List<string> { "1", "2", "3", "4", "5" };
-        HandCountPicker.SelectedIndex = 0; // default 1 hand - still a placeholder, multi-hand isn't built yet
+        HandCountPicker.SelectedIndex = Math.Clamp(currentHandCount - 1, 0, 4);
 
         VariantPicker.ItemsSource = new List<string>
         {
@@ -43,7 +42,7 @@ public partial class SettingsPage : ContentPage
     private async void SaveButton_OnClicked(object? sender, EventArgs e)
     {
         var deckCount = DeckCountPicker.SelectedIndex + 1; // index 0 = 1 deck
-        var handCount = HandCountPicker.SelectedIndex + 1; // index 0 = 1 hand - not yet consumed anywhere
+        var handCount = HandCountPicker.SelectedIndex + 1; // index 0 = 1 hand
 
         IGameVariant variant = VariantPicker.SelectedIndex switch
         {
@@ -52,8 +51,8 @@ public partial class SettingsPage : ContentPage
             _ => new StandardBlackjackVariant(),
         };
 
-        Debug.WriteLine($"Settings saved - Decks: {deckCount}, Hands: {handCount} (not yet applied), Variant: {variant.Name}");
-        SettingsSaved?.Invoke(variant, deckCount);
+        Debug.WriteLine($"Settings saved - Decks: {deckCount}, Hands: {handCount}, Variant: {variant.Name}");
+        SettingsSaved?.Invoke(variant, deckCount, handCount);
         await Navigation.PopModalAsync();
     }
 }
