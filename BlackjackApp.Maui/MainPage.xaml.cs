@@ -327,7 +327,7 @@ public partial class MainPage : ContentPage
         PlayerHandCardsLayout.Children.Clear();
         foreach (var card in _playerHand.Cards)
         {
-            PlayerHandCardsLayout.Children.Add(CreateCardImage(CardImageFile(card), 100));
+            PlayerHandCardsLayout.Children.Add(CreateCardImage(CardImageFile(card), 80));
         }
 
         PlayerHandValueLabel.Text = _playerHand.Cards.Count > 0

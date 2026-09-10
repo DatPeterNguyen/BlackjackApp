@@ -34,7 +34,9 @@
                     BackgroundColor="#0E4433" Padding="8">
                 <VerticalStackLayout HorizontalOptions="Center" Spacing="6">
                     <Label Text="Dealer" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
-                    <HorizontalStackLayout x:Name="DealerCardsLayout" HorizontalOptions="Center" Spacing="4"/>
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never" HorizontalOptions="Center">
+                        <HorizontalStackLayout x:Name="DealerCardsLayout" HorizontalOptions="Center" Spacing="4"/>
+                    </ScrollView>
                     <Label x:Name="DealerValueLabel" Text="" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
                 </VerticalStackLayout>
             </Border>
@@ -49,7 +51,9 @@
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="6">
                     <Border Grid.Column="0" Stroke="#8FBFA9" StrokeThickness="1" StrokeShape="RoundRectangle 6" Padding="4">
                         <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
-                            <HorizontalStackLayout x:Name="PlayerHandCardsLayout" HorizontalOptions="Center" Spacing="2"/>
+                            <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never" HorizontalOptions="Center">
+                                <HorizontalStackLayout x:Name="PlayerHandCardsLayout" HorizontalOptions="Center" Spacing="2"/>
+                            </ScrollView>
                             <Image x:Name="PlayerHandChipImage" HeightRequest="36"/>
                             <Label x:Name="PlayerHandBetLabel" Text="Bet: $0" TextColor="#8FBFA9" HorizontalOptions="Center" FontSize="12"/>
                             <Label x:Name="PlayerHandValueLabel" Text="" TextColor="#8FBFA9" HorizontalOptions="Center" FontSize="12"/>
@@ -95,14 +99,14 @@
             <!-- Row 4: Chip buttons - horizontally scrollable so it fits on a phone width -->
             <ScrollView Grid.Row="4" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout x:Name="ChipButtonsLayout" Spacing="4" HorizontalOptions="Center">
-                    <Button Text="$1" WidthRequest="56" HeightRequest="56" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="1"/>
-                    <Button Text="$5" WidthRequest="56" HeightRequest="56" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="5"/>
-                    <Button Text="$10" WidthRequest="56" HeightRequest="56" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="10"/>
-                    <Button Text="$25" WidthRequest="56" HeightRequest="56" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="25"/>
-                    <Button Text="$100" WidthRequest="56" HeightRequest="56" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="100"/>
-                    <Button Text="$1000" WidthRequest="56" HeightRequest="56" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="1000"/>
-                    <Button Text="$10K" WidthRequest="56" HeightRequest="56" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="10000"/>
-                    <Button x:Name="ClearBetButton" Text="Clear" WidthRequest="56" HeightRequest="56" Margin="12,2,2,2" Clicked="ClearBetButton_OnClicked"/>
+                    <Button Text="$1" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="1"/>
+                    <Button Text="$5" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="5"/>
+                    <Button Text="$10" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="10"/>
+                    <Button Text="$25" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="25"/>
+                    <Button Text="$100" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="100"/>
+                    <Button Text="$1K" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="1000"/>
+                    <Button Text="$10K" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="10000"/>
+                    <Button x:Name="ClearBetButton" Text="Clear" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="12,2,2,2" Clicked="ClearBetButton_OnClicked"/>
                 </HorizontalStackLayout>
             </ScrollView>
 
