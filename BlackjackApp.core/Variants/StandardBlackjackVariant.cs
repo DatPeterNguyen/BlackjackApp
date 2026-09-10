@@ -3,11 +3,11 @@ using BlackjackApp.core.Models;
 namespace BlackjackApp.core.Variants;
 
 /// <summary>
-/// Standard Blackjack using the common Vegas defaults the doc's scope
-/// settled on: dealer stands on all 17s (S17), blackjack pays 3:2, double
-/// down allowed on any two cards, double after split allowed (DAS is
-/// enforced by the caller letting CanDoubleDown apply post-split too - this
-/// class only checks "does this hand qualify right now").
+/// Standard Blackjack per the design doc's explicit rules: dealer hits on
+/// soft 17 (H17), blackjack pays 3:2, double down allowed on any two cards,
+/// double after split allowed (DAS is enforced by the caller letting
+/// CanDoubleDown apply post-split too - this class only checks "does this
+/// hand qualify right now").
 /// </summary>
 public class StandardBlackjackVariant : IGameVariant
 {
@@ -38,12 +38,24 @@ public class StandardBlackjackVariant : IGameVariant
         hand.Cards.Count == 2 &&
         Hand.PointValue(hand.Cards[0].Rank) == Hand.PointValue(hand.Cards[1].Rank);
 
-    /// <summary>Dealer hits on 16 or below, stands on 17 or above (hard or soft) - S17.</summary>
+    /// <summary>
+    /// Dealer hits on 16 or below, and also hits a soft 17 (an Ace still
+    /// counted as 11) - H17, per the design doc. Only stands on a hard 17
+    /// or any total of 18+.
+    /// </summary>
     public void PlayDealerHand(Deck deck, Hand dealerHand)
     {
-        while (dealerHand.GetBestValue().Value < 17)
+        while (true)
         {
-            dealerHand.AddCard(deck.Draw());
+            var (value, isSoft) = dealerHand.GetBestValue();
+            if (value < 17 || (value == 17 && isSoft))
+            {
+                dealerHand.AddCard(deck.Draw());
+            }
+            else
+            {
+                break;
+            }
         }
     }
 

@@ -99,9 +99,10 @@ public class StandardBlackjackVariantTests
     }
 
     [Test]
-    public void PlayDealerHand_StandsOnSoftSeventeen_DoesNotHit()
+    public void PlayDealerHand_HitsOnSoftSeventeen()
     {
-        // Ace + 6 = soft 17. S17 rule: dealer stands, does not draw again.
+        // Ace + 6 = soft 17. H17 rule (per the design doc): dealer must
+        // hit, not stand, on a soft 17.
         var dealerHand = HandOf((Suit.Spades, Rank.Ace), (Suit.Hearts, Rank.Six));
         var deck = new Deck(numberOfDecks: 1, new Random(1));
         var cardsBefore = deck.CardsRemaining;
@@ -110,8 +111,8 @@ public class StandardBlackjackVariantTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(dealerHand.Cards, Has.Count.EqualTo(2));
-            Assert.That(deck.CardsRemaining, Is.EqualTo(cardsBefore));
+            Assert.That(dealerHand.Cards, Has.Count.GreaterThan(2));
+            Assert.That(deck.CardsRemaining, Is.LessThan(cardsBefore));
         });
     }
 
