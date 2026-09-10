@@ -12,3 +12,7 @@ obj/
 ## OS files
 .DS_Store
 Thumbs.db
+
+## Downloaded Android SDK tooling - the real install lives at C:\Android,
+## not the project folder; this was a one-off download leftover from setup.
+commandlinetools-*/
