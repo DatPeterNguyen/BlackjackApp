@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BlackjackApp.Maui.Views.SettingsPage"
+             Title="Settings"
+             BackgroundColor="#0B3D2E">
+
+    <!--
+        MOBILE PORT of WPF's SettingsWindow.xaml. Same shell as the desktop
+        version - deck-count / hand-count / variant pickers that don't
+        change any game state yet. ComboBox becomes Picker; everything else
+        carries over as-is.
+    -->
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="4">
+            <Label Text="Settings" TextColor="White" FontSize="22" FontAttributes="Bold" Margin="0,0,0,20"/>
+
+            <Label Text="Number of Decks" TextColor="#8FBFA9" Margin="0,0,0,6"/>
+            <Picker x:Name="DeckCountPicker" WidthRequest="120" HorizontalOptions="Start"/>
+
+            <Label Text="Number of Hands" TextColor="#8FBFA9" Margin="0,20,0,6"/>
+            <Picker x:Name="HandCountPicker" WidthRequest="120" HorizontalOptions="Start"/>
+
+            <Label Text="Variant" TextColor="#8FBFA9" Margin="0,20,0,6"/>
+            <Picker x:Name="VariantPicker" WidthRequest="240" HorizontalOptions="Start"/>
+
+            <Button x:Name="SaveButton" Text="Save" WidthRequest="100" HeightRequest="36"
+                    HorizontalOptions="End" Margin="0,32,0,0" Clicked="SaveButton_OnClicked"/>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

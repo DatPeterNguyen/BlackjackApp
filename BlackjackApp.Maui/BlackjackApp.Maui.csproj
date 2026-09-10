@@ -45,6 +45,11 @@
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
 		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
+
+		<!-- Set directly rather than relying on Rider/MSBuild auto-detecting
+		     the ANDROID_HOME environment variable, since that detection can
+		     be flaky depending on IDE version and when the env var was set. -->
+		<AndroidSdkDirectory>C:\Android</AndroidSdkDirectory>
 	</PropertyGroup>
 
 	<ItemGroup>
