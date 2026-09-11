@@ -62,6 +62,37 @@ public partial class MainPage : ContentPage
 
     private bool _roundInProgress;
 
+    /// <summary>War Blackjack only: whether chip taps currently size the main bet or the optional War side bet.</summary>
+    private enum BettingTarget { MainBet, WarBet }
+
+    private BettingTarget _bettingTarget = BettingTarget.MainBet;
+
+    /// <summary>War Blackjack only: hand indices whose War card beat the dealer's and are waiting on a Press-or-Cash-Out choice, processed one at a time.</summary>
+    private readonly Queue<int> _warDecisionQueue = new();
+
+    /// <summary>War Blackjack only: the hand a Press/Cash Out tap currently applies to; -1 when no War decision is pending.</summary>
+    private int _pendingWarDecisionHandIndex = -1;
+
+    /// <summary>
+    /// War Blackjack only: the wallet balance right before this round's
+    /// bets were deducted. WarTotalLabel is always just (current balance -
+    /// this snapshot) - reading the real wallet directly, rather than
+    /// manually re-deriving War-plus-blackjack profit by hand, is what
+    /// makes it correct once a War win gets pressed into a hand's bet:
+    /// pressed winnings blur the line between "War money" and "blackjack
+    /// money", so anything short of the actual balance movement
+    /// double-counts or drops part of it.
+    /// </summary>
+    private decimal _walletBalanceAtRoundStart;
+
+    /// <summary>
+    /// Set once a round ends, so the table still shows that round's final
+    /// cards/results until the player starts betting again - at that point
+    /// the table is wiped clean like a fresh game, rather than lingering
+    /// under the new bet being placed.
+    /// </summary>
+    private bool _needsTableClearOnNextBet;
+
     /// <summary>Card image height used inside a hand slot - smaller than the dealer's so several fit across one slot's width before wrapping.</summary>
     private const double HandSlotCardHeight = 56;
 
@@ -74,6 +105,12 @@ public partial class MainPage : ContentPage
     public MainPage()
     {
         InitializeComponent();
+
+        // Matches the wallet's actual starting balance so switching to War
+        // before ever dealing a hand shows a real "$0" total instead of the
+        // whole starting balance read as profit.
+        _walletBalanceAtRoundStart = _wallet.Balance;
+
         BuildHandSlots();
         UpdateBalanceText();
         UpdateVariantLabel();
@@ -87,6 +124,7 @@ public partial class MainPage : ContentPage
         public required FlexLayout CardsLayout { get; init; }
         public required Image ChipImage { get; init; }
         public required Label BetLabel { get; init; }
+        public required Label WarBetLabel { get; init; }
         public required Label ValueLabel { get; init; }
         public required Label ResultLabel { get; init; }
     }
@@ -110,61 +148,135 @@ public partial class MainPage : ContentPage
         AllInButton.IsVisible = _handCount == 1;
         TotalResultLabel.IsVisible = false;
         TotalResultLabel.Text = "";
+        _needsTableClearOnNextBet = false;
 
         for (var i = 0; i < _handCount; i++)
         {
-            var cardsLayout = new FlexLayout
-            {
-                Direction = FlexDirection.Row,
-                Wrap = FlexWrap.Wrap,
-                JustifyContent = FlexJustify.Center,
-                AlignItems = FlexAlignItems.Center,
-                HorizontalOptions = LayoutOptions.Fill,
-                WidthRequest = HandSlotCardsWidth, // pinned explicitly - a Fill request alone wasn't reliably resolving to a real width inside the stack
-            };
-            var chipImage = new Image { HeightRequest = 28 };
-            var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
-            var valueLabel = new Label { Text = "", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
-            var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFD700"), HorizontalOptions = LayoutOptions.Center, FontSize = 10, FontAttributes = FontAttributes.Bold };
-
-            var content = new VerticalStackLayout
-            {
-                HorizontalOptions = LayoutOptions.Fill,
-                Spacing = 2,
-                Children = { cardsLayout, chipImage, betLabel, valueLabel, resultLabel },
-            };
-
-            var border = new Border
-            {
-                Stroke = Color.FromArgb("#8FBFA9"),
-                StrokeThickness = 1,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Padding = 4,
-                Margin = 2,
-                WidthRequest = HandSlotBorderWidth,
-                HorizontalOptions = LayoutOptions.Start,
-                Content = content,
-            };
-
-            var handIndex = i; // capture for the closure below
-            var tap = new TapGestureRecognizer();
-            tap.Tapped += (_, _) => SelectHandForBetting(handIndex);
-            border.GestureRecognizers.Add(tap);
-
-            _handSlotViews.Add(new HandSlotView
-            {
-                Border = border,
-                CardsLayout = cardsLayout,
-                ChipImage = chipImage,
-                BetLabel = betLabel,
-                ValueLabel = valueLabel,
-                ResultLabel = resultLabel,
-            });
-
+            var (border, view) = CreateHandSlotView(i);
+            _handSlotViews.Add(view);
             PlayerHandsLayout.Children.Add(border);
         }
 
         RefreshHandSlotHighlights();
+        UpdateWarUiVisibility();
+    }
+
+    /// <summary>
+    /// Builds one hand slot's Border and bundled view - shared by
+    /// BuildHandSlots (the normal 1-5 seats) and SplitButton_OnClicked
+    /// (inserting a brand new hand mid-round when a pair is split).
+    /// handIndex is only used to wire up its tap-to-select-for-betting
+    /// gesture, which is a no-op mid-round anyway (see SelectHandForBetting),
+    /// so it doesn't need to stay accurate if later hands shift position.
+    /// </summary>
+    private (Border Border, HandSlotView View) CreateHandSlotView(int handIndex)
+    {
+        var cardsLayout = new FlexLayout
+        {
+            Direction = FlexDirection.Row,
+            Wrap = FlexWrap.Wrap,
+            JustifyContent = FlexJustify.Center,
+            AlignItems = FlexAlignItems.Center,
+            HorizontalOptions = LayoutOptions.Fill,
+            WidthRequest = HandSlotCardsWidth, // pinned explicitly - a Fill request alone wasn't reliably resolving to a real width inside the stack
+        };
+        var chipImage = new Image { HeightRequest = 28 };
+        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
+        var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11, IsVisible = _variant is WarBlackjackVariant };
+        var valueLabel = new Label { Text = "", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
+        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFD700"), HorizontalOptions = LayoutOptions.Center, FontSize = 10, FontAttributes = FontAttributes.Bold };
+
+        var content = new VerticalStackLayout
+        {
+            HorizontalOptions = LayoutOptions.Fill,
+            Spacing = 2,
+            Children = { cardsLayout, chipImage, betLabel, warBetLabel, valueLabel, resultLabel },
+        };
+
+        var border = new Border
+        {
+            Stroke = Color.FromArgb("#8FBFA9"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = 4,
+            Margin = 2,
+            WidthRequest = HandSlotBorderWidth,
+            HorizontalOptions = LayoutOptions.Start,
+            Content = content,
+        };
+
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += (_, _) => SelectHandForBetting(handIndex);
+        border.GestureRecognizers.Add(tap);
+
+        var view = new HandSlotView
+        {
+            Border = border,
+            CardsLayout = cardsLayout,
+            ChipImage = chipImage,
+            BetLabel = betLabel,
+            WarBetLabel = warBetLabel,
+            ValueLabel = valueLabel,
+            ResultLabel = resultLabel,
+        };
+
+        return (border, view);
+    }
+
+    /// <summary>
+    /// Shows/hides the War-only betting-target toggle and each hand slot's
+    /// War bet label based on the current variant, and resets betting back
+    /// to the main bet whenever War isn't the active variant.
+    /// </summary>
+    private void UpdateWarUiVisibility()
+    {
+        var isWar = _variant is WarBlackjackVariant;
+        BetTargetButton.IsVisible = isWar;
+
+        if (!isWar)
+        {
+            _bettingTarget = BettingTarget.MainBet;
+            BetTargetButton.Text = "Betting: Main Bet";
+        }
+
+        foreach (var view in _handSlotViews)
+        {
+            view.WarBetLabel.IsVisible = isWar;
+        }
+
+        UpdateWarTotalLabel();
+    }
+
+    /// <summary>
+    /// Refreshes the always-visible round total readout (War Blackjack
+    /// only) - shown/hidden whenever the variant changes, and refreshed
+    /// with the real result once EndRound resolves the whole round (War
+    /// AND blackjack combined). Deliberately NOT called mid-round (e.g.
+    /// right after War cards are dealt, or on a Press/Cash Out) - every
+    /// hand's bet is still deducted and in play at that point, so showing a
+    /// total then would read as a loss before the round has even finished.
+    /// Computed straight from the real wallet movement since
+    /// _walletBalanceAtRoundStart, rather than re-derived by hand, so a
+    /// pressed War win (which blurs "War money" into "blackjack money")
+    /// can't throw the total off.
+    /// </summary>
+    private void UpdateWarTotalLabel()
+    {
+        if (_variant is not WarBlackjackVariant)
+        {
+            WarTotalLabel.IsVisible = false;
+            return;
+        }
+
+        var totalNet = _wallet.Balance - _walletBalanceAtRoundStart;
+
+        WarTotalLabel.IsVisible = true;
+        WarTotalLabel.Text = totalNet switch
+        {
+            > 0 => $"Total: won ${totalNet:N0}",
+            < 0 => $"Total: lost ${-totalNet:N0}",
+            _ => "Total: $0",
+        };
     }
 
     /// <summary>Before a round: tapping a hand slot makes it the current betting target. Ignored mid-round, since bets are locked in once dealt.</summary>
@@ -199,9 +311,16 @@ public partial class MainPage : ContentPage
 
         if (sender is Button { CommandParameter: string tagValue } && int.TryParse(tagValue, out var chipValue))
         {
-            var slot = _hands[_selectedBetIndex];
+            if (_needsTableClearOnNextBet)
+            {
+                ClearTableForNewRound();
+            }
 
-            if (slot.Bet >= ChipWallet.TableMaximum)
+            var slot = _hands[_selectedBetIndex];
+            var targetingWarBet = _bettingTarget == BettingTarget.WarBet && _variant is WarBlackjackVariant;
+            var currentAmount = targetingWarBet ? slot.WarBet : slot.Bet;
+
+            if (currentAmount >= ChipWallet.TableMaximum)
             {
                 ResultLabel.Text = $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand.";
                 return;
@@ -209,11 +328,21 @@ public partial class MainPage : ContentPage
 
             // Clamp rather than reject outright, so tapping a big chip near
             // the cap still places as much of it as the table allows.
-            var room = ChipWallet.RemainingRoomUnderMax(slot.Bet);
-            slot.Bet += (int)Math.Min(chipValue, room);
+            var room = ChipWallet.RemainingRoomUnderMax(currentAmount);
+            var amountToAdd = (int)Math.Min(chipValue, room);
+
+            if (targetingWarBet)
+            {
+                slot.WarBet += amountToAdd;
+            }
+            else
+            {
+                slot.Bet += amountToAdd;
+            }
+
             UpdateHandSlotBetDisplay(_selectedBetIndex);
             UpdateTotalWageredText();
-            ResultLabel.Text = slot.Bet >= ChipWallet.TableMaximum
+            ResultLabel.Text = (targetingWarBet ? slot.WarBet : slot.Bet) >= ChipWallet.TableMaximum
                 ? $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand."
                 : "";
         }
@@ -226,9 +355,31 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        _hands[_selectedBetIndex].Bet = 0;
+        var slot = _hands[_selectedBetIndex];
+
+        if (_bettingTarget == BettingTarget.WarBet && _variant is WarBlackjackVariant)
+        {
+            slot.WarBet = 0;
+        }
+        else
+        {
+            slot.Bet = 0;
+        }
+
         UpdateHandSlotBetDisplay(_selectedBetIndex);
         UpdateTotalWageredText();
+    }
+
+    /// <summary>War Blackjack only: toggles whether chip taps/Clear size the main bet or the War side bet.</summary>
+    private void BetTargetButton_OnClicked(object? sender, EventArgs e)
+    {
+        if (_roundInProgress)
+        {
+            return;
+        }
+
+        _bettingTarget = _bettingTarget == BettingTarget.MainBet ? BettingTarget.WarBet : BettingTarget.MainBet;
+        BetTargetButton.Text = _bettingTarget == BettingTarget.MainBet ? "Betting: Main Bet" : "Betting: War Bet";
     }
 
     /// <summary>
@@ -242,6 +393,11 @@ public partial class MainPage : ContentPage
         if (_roundInProgress || _handCount != 1)
         {
             return;
+        }
+
+        if (_needsTableClearOnNextBet)
+        {
+            ClearTableForNewRound();
         }
 
         var slot = _hands[_selectedBetIndex];
@@ -294,7 +450,11 @@ public partial class MainPage : ContentPage
         if (handCount != _handCount)
         {
             _handCount = handCount;
-            BuildHandSlots();
+            BuildHandSlots(); // also refreshes War UI visibility for the new variant
+        }
+        else
+        {
+            UpdateWarUiVisibility();
         }
 
         UpdateVariantLabel();
@@ -320,7 +480,21 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        var totalBet = _hands.Sum(h => h.Bet);
+        // War bets are optional (0 skips the side bet entirely for that
+        // hand), but any non-zero War bet still has to sit within the same
+        // table limits as a normal bet.
+        if (_variant is WarBlackjackVariant && _hands.Any(h => h.WarBet > 0 && !ChipWallet.IsWithinTableLimits(h.WarBet)))
+        {
+            ResultLabel.Text = $"War bets must be between ${ChipWallet.TableMinimum:N0} and ${ChipWallet.TableMaximum:N0} per hand.";
+            return;
+        }
+
+        var totalBet = _hands.Sum(h => h.Bet + h.WarBet);
+
+        // Snapshot before the deduction, so the round's total (War Blackjack
+        // only) can just be "balance now minus this" at any point, rather
+        // than manually re-deriving it as War/blackjack money moves around.
+        _walletBalanceAtRoundStart = _wallet.Balance;
 
         if (!_wallet.TryDeduct(totalBet))
         {
@@ -337,28 +511,46 @@ public partial class MainPage : ContentPage
             _deck = new Deck(numberOfDecks: _deckCount);
         }
 
-        // Fresh hands for the new round, keeping each slot's bet.
-        var bets = _hands.Select(h => h.Bet).ToList();
-        _hands = bets.Select(bet => new PlayerHandSlot { Bet = bet }).ToList();
-
+        // Fresh hands for the new round, keeping each slot's bet(s).
+        var bets = _hands.Select(h => (h.Bet, h.WarBet)).ToList();
+        _hands = bets.Select(b => new PlayerHandSlot { Bet = b.Bet, WarBet = b.WarBet }).ToList();
         _dealerHand = new Hand();
+
+        _roundInProgress = true;
+        ResultLabel.Text = "";
+        UpdateBalanceText();
+        UpdateTotalWageredText();
+        SetRoundInProgress(true);
+
+        if (_variant is WarBlackjackVariant warVariant)
+        {
+            // Nothing to act on yet - the War card(s) have to be dealt and
+            // any winning War bets decided before real blackjack play starts.
+            HitButton.IsEnabled = false;
+            StandButton.IsEnabled = false;
+            DoubleButton.IsEnabled = false;
+            SplitButton.IsEnabled = false;
+            StartWarPhase(warVariant);
+        }
+        else
+        {
+            DealOpeningHandsAndStartPlay();
+        }
+    }
+
+    /// <summary>Non-War path: deals every hand's normal two-card opening hand in one shot and starts play (or resolves immediately on an all-blackjack round).</summary>
+    private void DealOpeningHandsAndStartPlay()
+    {
+        if (_deck is null)
+        {
+            return;
+        }
+
         _variant.DealDealerOpeningHand(_deck, _dealerHand);
 
         foreach (var slot in _hands)
         {
             _variant.DealPlayerOpeningHand(_deck, slot.Hand);
-
-            // War Blackjack's DealPlayerOpeningHand already dealt this
-            // hand's own War card - resolve that side bet now, per hand,
-            // against the one shared dealer hand's War card.
-            if (_variant is WarBlackjackVariant warVariant)
-            {
-                var warPayout = warVariant.ResolveWarPayout(slot.Hand, _dealerHand, slot.Bet);
-                _wallet.Add(warPayout);
-                slot.ResultText = warVariant.PlayerWinsWar(slot.Hand, _dealerHand)
-                    ? $"War: win ${warPayout:N0}! "
-                    : $"War: lose ${-warPayout:N0}. ";
-            }
 
             // A natural blackjack finishes this hand immediately, but other
             // hands may still need to play - it just gets skipped in turn
@@ -369,14 +561,7 @@ public partial class MainPage : ContentPage
             }
         }
 
-        UpdateBalanceText();
-        UpdateTotalWageredText();
-
-        _roundInProgress = true;
-        ResultLabel.Text = "";
         RenderAllHandSlots(hideHoleCard: true);
-        SetRoundInProgress(true);
-
         _activeHandIndex = _hands.FindIndex(h => !h.IsFinished);
 
         if (_activeHandIndex == -1)
@@ -385,6 +570,168 @@ public partial class MainPage : ContentPage
         }
         else
         {
+            RefreshHandSlotHighlights();
+        }
+    }
+
+    /// <summary>
+    /// War path, phase 1: deals the one shared dealer War card and each
+    /// hand's own War card, immediately settles any hand that lost or tied
+    /// its War bet (dealer wins ties), and queues up a Press-or-Cash-Out
+    /// decision for every hand that won one.
+    /// </summary>
+    private void StartWarPhase(WarBlackjackVariant warVariant)
+    {
+        if (_deck is null)
+        {
+            return;
+        }
+
+        warVariant.DealDealerWarCard(_deck, _dealerHand);
+
+        foreach (var slot in _hands)
+        {
+            warVariant.DealPlayerWarCard(_deck, slot.Hand);
+        }
+
+        RenderAllHandSlots(hideHoleCard: false); // no hole card exists yet - both War cards are shown face-up
+
+        _warDecisionQueue.Clear();
+
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            var slot = _hands[i];
+
+            if (slot.WarBet <= 0)
+            {
+                continue;
+            }
+
+            if (warVariant.PlayerWinsWar(slot.Hand, _dealerHand))
+            {
+                _warDecisionQueue.Enqueue(i);
+            }
+            else
+            {
+                // Lost or tied - the War stake is simply forfeited; it was
+                // already deducted from the balance up front, so there's no
+                // further wallet change here.
+                slot.ResultText = $"War: lost ${slot.WarBet:N0}. ";
+                RenderHandSlot(i);
+            }
+        }
+
+        // The Total display intentionally doesn't refresh here (or anywhere
+        // else mid-round) - every hand's main bet is still deducted and
+        // "in the air" until blackjack plays out, so any total taken now
+        // would just show the whole round's stake as a loss before the
+        // round has actually finished. It stays at the "$0" it was reset to
+        // when betting started, and only shows the real result once
+        // EndRound resolves the whole round.
+        AdvanceWarDecisionQueue();
+    }
+
+    /// <summary>Moves to the next hand with a pending War decision, or - once the queue is empty - deals every hand's second card and starts real blackjack play.</summary>
+    private void AdvanceWarDecisionQueue()
+    {
+        if (_warDecisionQueue.Count == 0)
+        {
+            _pendingWarDecisionHandIndex = -1;
+            PressWarButton.IsVisible = false;
+            CashOutWarButton.IsVisible = false;
+            ResultLabel.Text = "";
+            DealOpeningSecondCardsAndStartPlay();
+            return;
+        }
+
+        _pendingWarDecisionHandIndex = _warDecisionQueue.Dequeue();
+        var slot = _hands[_pendingWarDecisionHandIndex];
+
+        ResultLabel.Text = _hands.Count > 1
+            ? $"Hand {_pendingWarDecisionHandIndex + 1} won the War (+${slot.WarBet:N0})! Press it into your bet, or cash out?"
+            : $"You won the War (+${slot.WarBet:N0})! Press it into your bet, or cash out?";
+
+        _activeHandIndex = _pendingWarDecisionHandIndex;
+        RefreshHandSlotHighlights();
+        PressWarButton.IsVisible = true;
+        CashOutWarButton.IsVisible = true;
+    }
+
+    /// <summary>Folds this hand's War stake plus its 1:1 winnings straight into its blackjack bet, putting it at risk for the rest of the round instead of banking it.</summary>
+    private void PressWarButton_OnClicked(object? sender, EventArgs e)
+    {
+        if (_pendingWarDecisionHandIndex < 0)
+        {
+            return;
+        }
+
+        var slot = _hands[_pendingWarDecisionHandIndex];
+        var warWinnings = slot.WarBet; // War pays 1:1
+        slot.Bet += slot.WarBet + warWinnings;
+        slot.ResultText = $"War: won ${warWinnings:N0} - pressed into bet. ";
+
+        // Pressed winnings aren't realized profit yet - that money is now
+        // just part of the (larger) blackjack bet, still at risk. The round
+        // total only reflects it once EndRound resolves that bigger bet.
+        UpdateHandSlotBetDisplay(_pendingWarDecisionHandIndex);
+        UpdateTotalWageredText();
+        RenderHandSlot(_pendingWarDecisionHandIndex);
+
+        AdvanceWarDecisionQueue();
+    }
+
+    /// <summary>Banks this hand's War stake plus its 1:1 winnings straight into the balance, leaving the blackjack bet untouched.</summary>
+    private void CashOutWarButton_OnClicked(object? sender, EventArgs e)
+    {
+        if (_pendingWarDecisionHandIndex < 0)
+        {
+            return;
+        }
+
+        var slot = _hands[_pendingWarDecisionHandIndex];
+        var warWinnings = slot.WarBet; // War pays 1:1
+        _wallet.Add(slot.WarBet + warWinnings);
+        slot.ResultText = $"War: won ${warWinnings:N0} - cashed out. ";
+
+        // The Total display intentionally doesn't refresh here either - see
+        // the matching note in StartWarPhase. It only shows the real
+        // combined result once EndRound resolves the whole round.
+        UpdateBalanceText();
+        RenderHandSlot(_pendingWarDecisionHandIndex);
+
+        AdvanceWarDecisionQueue();
+    }
+
+    /// <summary>War path, phase 2: once every War decision is settled, deals the dealer's and each hand's second card and starts real blackjack play (or resolves immediately on an all-blackjack round).</summary>
+    private void DealOpeningSecondCardsAndStartPlay()
+    {
+        if (_deck is null || _variant is not WarBlackjackVariant warVariant)
+        {
+            return;
+        }
+
+        warVariant.DealDealerSecondCard(_deck, _dealerHand);
+
+        foreach (var slot in _hands)
+        {
+            warVariant.DealPlayerSecondCard(_deck, slot.Hand);
+
+            if (slot.Hand.IsBlackjack)
+            {
+                slot.IsFinished = true;
+            }
+        }
+
+        RenderAllHandSlots(hideHoleCard: true);
+        _activeHandIndex = _hands.FindIndex(h => !h.IsFinished);
+
+        if (_activeHandIndex == -1)
+        {
+            EndRound();
+        }
+        else
+        {
+            SetRoundInProgress(true); // re-enables Hit/Stand/Double/Split now that real play begins
             RefreshHandSlotHighlights();
         }
     }
@@ -463,9 +810,90 @@ public partial class MainPage : ContentPage
         ContinueOrAdvance(cameFromDouble: true);
     }
 
+    /// <summary>
+    /// Splits the active hand's pair into two separate hands, each getting
+    /// one new card and its own equal-sized bet (an additional deduction
+    /// from the wallet). The new hand is inserted right after the original
+    /// in turn order, so play naturally continues into it once the first
+    /// half is done - no other turn-advancing code needs to know splitting
+    /// happened at all. Only one split per hand is offered (no re-splitting
+    /// a hand that already came from a split), and splitting Aces follows
+    /// the standard rule: each Ace hand gets exactly one more card and is
+    /// locked immediately, with no further hitting or doubling.
+    /// </summary>
     private void SplitButton_OnClicked(object? sender, EventArgs e)
     {
-        ResultLabel.Text = "Split isn't wired up yet.";
+        if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
+        {
+            return;
+        }
+
+        var slot = _hands[_activeHandIndex];
+
+        if (slot.HasBeenSplit)
+        {
+            ResultLabel.Text = "This hand has already been split.";
+            return;
+        }
+
+        if (!_variant.CanSplit(slot.Hand))
+        {
+            ResultLabel.Text = "This hand can't be split.";
+            return;
+        }
+
+        if (!_wallet.TryDeduct(slot.Bet))
+        {
+            ResultLabel.Text = "Not enough chips to split this hand.";
+            return;
+        }
+
+        var wasSplittingAces = slot.Hand.Cards[0].Rank == Rank.Ace;
+        var secondCard = slot.Hand.TakeSecondCardForSplit();
+
+        var newSlot = new PlayerHandSlot { Bet = slot.Bet, HasBeenSplit = true };
+        newSlot.Hand.AddCard(secondCard);
+        slot.HasBeenSplit = true;
+
+        // One more card each, completing both hands back to two cards.
+        _variant.Hit(_deck, slot.Hand);
+        _variant.Hit(_deck, newSlot.Hand);
+
+        if (wasSplittingAces)
+        {
+            slot.IsFinished = true;
+            newSlot.IsFinished = true;
+        }
+
+        var insertIndex = _activeHandIndex + 1;
+        _hands.Insert(insertIndex, newSlot);
+
+        var (border, view) = CreateHandSlotView(insertIndex);
+        _handSlotViews.Insert(insertIndex, view);
+        PlayerHandsLayout.Children.Insert(insertIndex, border);
+
+        UpdateBalanceText();
+        UpdateHandSlotBetDisplay(_activeHandIndex);
+        UpdateHandSlotBetDisplay(insertIndex);
+        UpdateTotalWageredText();
+        RenderHandSlot(_activeHandIndex);
+        RenderHandSlot(insertIndex);
+
+        if (wasSplittingAces)
+        {
+            // Both halves are already locked - hand the turn straight to
+            // whatever comes next instead of leaving play on a hand that
+            // can't act (ContinueOrAdvance would re-derive "finished" from
+            // CanHit/CanDoubleDown, which don't know about the Ace-split
+            // lock, so it has to be the direct turn-advance call instead).
+            ResultLabel.Text = "";
+            AdvanceToNextHandOrEndRound();
+        }
+        else
+        {
+            ResultLabel.Text = "";
+            RefreshHandSlotHighlights();
+        }
     }
 
     /// <summary>
@@ -543,31 +971,48 @@ public partial class MainPage : ContentPage
             _variant.PlayDealerHand(_deck, _dealerHand);
         }
 
-        var totalNet = 0m;
-
         foreach (var slot in _hands)
         {
             var outcome = _variant.DetermineOutcome(slot.Hand, _dealerHand);
             var payout = _variant.ResolvePayout(slot.Hand, _dealerHand, slot.Bet);
+
+            // A 21 made from a split hand doesn't get the 3:2 blackjack
+            // bonus, per standard casino rules - only the original two-card
+            // deal counts as a "natural". Pay it the same as a normal win.
+            if (slot.HasBeenSplit && outcome == RoundOutcome.PlayerBlackjack)
+            {
+                outcome = RoundOutcome.PlayerWin;
+                payout = slot.Bet;
+            }
 
             // The original bet was already deducted up front, so returning
             // to the balance means giving back the bet itself plus/minus payout.
             _wallet.Add(slot.Bet + payout);
             slot.ResultText += DescribeOutcome(outcome, payout);
             slot.IsFinished = true;
-
-            // payout alone is the net win/loss on this hand (it excludes the
-            // returned bet); War's side-bet payout, added to the wallet
-            // earlier in DealButton_OnClicked, is folded in via ResultText
-            // there but not into this total - only the blackjack-stage
-            // result is summed here to avoid double counting.
-            totalNet += payout;
         }
 
-        // Only worth showing when there's more than one hand to sum across -
-        // a single hand's own result label already says the same thing.
-        if (_hands.Count > 1)
+        // The round's true net win/loss - computed from the actual wallet
+        // movement since the snapshot taken at Deal, rather than re-derived
+        // by summing payouts by hand, since a pressed War win blurs "War
+        // money" into "blackjack money" and a hand-by-hand sum would either
+        // double-count or drop part of it.
+        var totalNet = _wallet.Balance - _walletBalanceAtRoundStart;
+
+        if (_variant is WarBlackjackVariant)
         {
+            // WarTotalLabel is the one true round total for War - War side
+            // bets plus every hand's blackjack payout, single hand or
+            // multiple - so there's no separate multi-hand total to show.
+            UpdateWarTotalLabel();
+            TotalResultLabel.IsVisible = false;
+            TotalResultLabel.Text = "";
+        }
+        else if (_hands.Count > 1)
+        {
+            // Only worth showing for the other variants when there's more
+            // than one hand to sum across - a single hand's own result
+            // label already says the same thing.
             TotalResultLabel.IsVisible = true;
             TotalResultLabel.Text = totalNet switch
             {
@@ -591,6 +1036,7 @@ public partial class MainPage : ContentPage
         foreach (var slot in _hands)
         {
             slot.Bet = 0;
+            slot.WarBet = 0;
         }
 
         UpdateTotalWageredText();
@@ -602,6 +1048,10 @@ public partial class MainPage : ContentPage
         SetRoundInProgress(false);
         _selectedBetIndex = 0;
         RefreshHandSlotHighlights();
+
+        // The finished round's cards/results stay visible for review until
+        // the player actually starts betting on the next one.
+        _needsTableClearOnNextBet = true;
 
         if (_pendingVariant is not null && _pendingDeckCount is not null && _pendingHandCount is not null)
         {
@@ -622,6 +1072,50 @@ public partial class MainPage : ContentPage
         RoundOutcome.PlayerBust => $"Bust! You lose ${-payout:N0}.",
         _ => "",
     };
+
+    /// <summary>
+    /// Wipes the previous round's cards, values, and result text off the
+    /// table so it looks like a fresh game as soon as the player starts
+    /// betting again. Only touches the display - the underlying hands are
+    /// already rebuilt fresh in DealButton_OnClicked regardless.
+    /// </summary>
+    private void ClearTableForNewRound()
+    {
+        DealerCardsLayout.Children.Clear();
+        DealerValueLabel.Text = "";
+        ResultLabel.Text = "";
+        TotalResultLabel.IsVisible = false;
+        TotalResultLabel.Text = "";
+
+        // A hard reset to "$0" rather than a fresh UpdateWarTotalLabel() call -
+        // that call would just recompute from the still-stale round-start
+        // snapshot and redisplay the PREVIOUS round's final total.
+        // _walletBalanceAtRoundStart itself gets a real reset in
+        // DealButton_OnClicked once the next round actually starts.
+        if (_variant is WarBlackjackVariant)
+        {
+            WarTotalLabel.Text = "Total: $0";
+        }
+
+        if (_hands.Count != _handCount)
+        {
+            // A hand got split last round, leaving an extra hand slot beyond
+            // the normal 1-5 seats - BuildHandSlots collapses the table
+            // back down to exactly _handCount fresh ones (it also resets
+            // _needsTableClearOnNextBet itself).
+            BuildHandSlots();
+            return;
+        }
+
+        foreach (var view in _handSlotViews)
+        {
+            view.CardsLayout.Children.Clear();
+            view.ValueLabel.Text = "";
+            view.ResultLabel.Text = "";
+        }
+
+        _needsTableClearOnNextBet = false;
+    }
 
     private void RenderAllHandSlots(bool hideHoleCard)
     {
@@ -684,6 +1178,7 @@ public partial class MainPage : ContentPage
         var slot = _hands[index];
         var view = _handSlotViews[index];
         view.BetLabel.Text = $"Bet: ${slot.Bet:N0}";
+        view.WarBetLabel.Text = $"War: ${slot.WarBet:N0}";
 
         if (slot.Bet <= 0)
         {
@@ -695,7 +1190,7 @@ public partial class MainPage : ContentPage
         view.ChipImage.Source = ImageSource.FromFile($"chip_{(int)chipValue}.png");
     }
 
-    private void UpdateTotalWageredText() => CurrentBetLabel.Text = $"Total Wagered: ${_hands.Sum(h => h.Bet):N0}";
+    private void UpdateTotalWageredText() => CurrentBetLabel.Text = $"Total Wagered: ${_hands.Sum(h => h.Bet + h.WarBet):N0}";
 
     private void SetRoundInProgress(bool roundInProgress)
     {

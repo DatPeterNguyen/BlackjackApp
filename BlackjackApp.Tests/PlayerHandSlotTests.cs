@@ -13,8 +13,30 @@ public class PlayerHandSlotTests
         {
             Assert.That(slot.Hand.Cards, Is.Empty);
             Assert.That(slot.Bet, Is.EqualTo(0));
+            Assert.That(slot.WarBet, Is.EqualTo(0));
             Assert.That(slot.IsFinished, Is.False);
+            Assert.That(slot.HasBeenSplit, Is.False);
             Assert.That(slot.ResultText, Is.EqualTo(""));
+        });
+    }
+
+    [Test]
+    public void HasBeenSplit_CanBeSetAfterConstruction()
+    {
+        var slot = new PlayerHandSlot { HasBeenSplit = true };
+
+        Assert.That(slot.HasBeenSplit, Is.True);
+    }
+
+    [Test]
+    public void WarBet_CanBeSetIndependentlyOfTheMainBet()
+    {
+        var slot = new PlayerHandSlot { Bet = 25, WarBet = 10 };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(slot.Bet, Is.EqualTo(25));
+            Assert.That(slot.WarBet, Is.EqualTo(10));
         });
     }
 

@@ -13,6 +13,19 @@ public class Hand
     public void AddCard(Card card) => Cards.Add(card);
 
     /// <summary>
+    /// Removes and returns this hand's second card, peeling it off into a
+    /// brand new hand when splitting a pair. Only meaningful on a still-
+    /// unsplit two-card hand (the caller is expected to have already
+    /// checked that the two cards qualify for a split).
+    /// </summary>
+    public Card TakeSecondCardForSplit()
+    {
+        var card = Cards[1];
+        Cards.RemoveAt(1);
+        return card;
+    }
+
+    /// <summary>
     /// The best blackjack total for this hand, and whether that total is
     /// "soft" (an Ace is still being counted as 11 rather than 1).
     /// Standard algorithm: count every Ace as 11 first, then downgrade

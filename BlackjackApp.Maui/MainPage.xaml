@@ -12,7 +12,7 @@
         ScrollViews throughout so nothing overflows on a phone screen.
     -->
     <ScrollView>
-        <Grid Padding="16" RowSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+        <Grid Padding="16" RowSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
 
             <!-- Row 0: Top bar -->
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
@@ -61,13 +61,23 @@
                            FontAttributes="Bold" HorizontalOptions="Center"/>
                     <Label x:Name="ResultLabel" Text="" TextColor="#FFD700" FontSize="16" FontAttributes="Bold"
                            HorizontalOptions="Center"/>
+                    <Label x:Name="WarTotalLabel" Text="" TextColor="#7FB3FF" FontSize="14" FontAttributes="Bold"
+                           HorizontalOptions="Center" IsVisible="False"/>
                     <Label x:Name="TotalResultLabel" Text="" TextColor="#FFD700" FontSize="14" FontAttributes="Bold"
                            HorizontalOptions="Center" IsVisible="False"/>
                 </VerticalStackLayout>
             </Border>
 
-            <!-- Row 4: Chip buttons - horizontally scrollable so it fits on a phone width -->
-            <ScrollView Grid.Row="4" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+            <!--
+                Row 4: War Blackjack only - toggles whether chip taps size
+                the main blackjack bet or the optional War side bet for the
+                selected hand. Hidden entirely for the other variants.
+            -->
+            <Button x:Name="BetTargetButton" Grid.Row="4" Text="Betting: Main Bet" IsVisible="False"
+                    HorizontalOptions="Center" Padding="12,6" Clicked="BetTargetButton_OnClicked"/>
+
+            <!-- Row 5: Chip buttons - horizontally scrollable so it fits on a phone width -->
+            <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout x:Name="ChipButtonsLayout" Spacing="4" HorizontalOptions="Center">
                     <Button Text="$1" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="1"/>
                     <Button Text="$5" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="2" Clicked="ChipButton_OnClicked" CommandParameter="5"/>
@@ -81,14 +91,17 @@
                 </HorizontalStackLayout>
             </ScrollView>
 
-            <!-- Row 5: Action buttons - also horizontally scrollable -->
-            <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+            <!-- Row 6: Action buttons - also horizontally scrollable -->
+            <ScrollView Grid.Row="6" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout Spacing="4" HorizontalOptions="Center">
                     <Button x:Name="DealButton" Text="Deal" WidthRequest="90" HeightRequest="44" Margin="2" FontAttributes="Bold" Clicked="DealButton_OnClicked"/>
                     <Button x:Name="HitButton" Text="Hit" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="HitButton_OnClicked"/>
                     <Button x:Name="StandButton" Text="Stand" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="StandButton_OnClicked"/>
                     <Button x:Name="DoubleButton" Text="Double" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="DoubleButton_OnClicked"/>
                     <Button x:Name="SplitButton" Text="Split" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="SplitButton_OnClicked"/>
+                    <!-- War Blackjack only - shown after a hand's War card beats the dealer's, replacing the normal action buttons for that moment. -->
+                    <Button x:Name="PressWarButton" Text="Press" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="PressWarButton_OnClicked"/>
+                    <Button x:Name="CashOutWarButton" Text="Cash Out" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="CashOutWarButton_OnClicked"/>
                 </HorizontalStackLayout>
             </ScrollView>
         </Grid>

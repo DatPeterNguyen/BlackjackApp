@@ -151,6 +151,50 @@ public class WarBlackjackVariantTests
     }
 
     [Test]
+    public void DealDealerWarCard_GivesTheDealerExactlyOneCard()
+    {
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var dealerHand = new Hand();
+
+        _variant.DealDealerWarCard(deck, dealerHand);
+
+        Assert.That(dealerHand.Cards, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void DealPlayerWarCard_GivesOnePlayerHandExactlyOneCard()
+    {
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var playerHand = new Hand();
+
+        _variant.DealPlayerWarCard(deck, playerHand);
+
+        Assert.That(playerHand.Cards, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void DealDealerSecondCard_AddsExactlyOneCardToAnExistingWarCard()
+    {
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var dealerHand = HandOf((Suit.Hearts, Rank.Six));
+
+        _variant.DealDealerSecondCard(deck, dealerHand);
+
+        Assert.That(dealerHand.Cards, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void DealPlayerSecondCard_AddsExactlyOneCardToAnExistingWarCard()
+    {
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var playerHand = HandOf((Suit.Spades, Rank.Queen));
+
+        _variant.DealPlayerSecondCard(deck, playerHand);
+
+        Assert.That(playerHand.Cards, Has.Count.EqualTo(2));
+    }
+
+    [Test]
     public void EndsTurnAfterDouble_DelegatesToStandardBlackjackRules()
     {
         Assert.That(_variant.EndsTurnAfterDouble, Is.True);

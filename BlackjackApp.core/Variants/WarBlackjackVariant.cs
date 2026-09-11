@@ -27,11 +27,17 @@ public class WarBlackjackVariant : IGameVariant
 
     public string Name => "War Blackjack";
 
-    /// <summary>Deals the single "War" card each to player and dealer that the War side bet resolves against.</summary>
+    /// <summary>Deals just the dealer's single shared War card - call once per round, compared against every player hand's own War card.</summary>
+    public void DealDealerWarCard(Deck deck, Hand dealerHand) => dealerHand.AddCard(deck.Draw());
+
+    /// <summary>Deals one player hand's own War card - call once per active hand slot.</summary>
+    public void DealPlayerWarCard(Deck deck, Hand playerHand) => playerHand.AddCard(deck.Draw());
+
+    /// <summary>Deals the single "War" card each to player and dealer that the War side bet resolves against (single-hand convenience wrapper around DealPlayerWarCard/DealDealerWarCard).</summary>
     public void DealWarCards(Deck deck, Hand playerHand, Hand dealerHand)
     {
-        playerHand.AddCard(deck.Draw());
-        dealerHand.AddCard(deck.Draw());
+        DealPlayerWarCard(deck, playerHand);
+        DealDealerWarCard(deck, dealerHand);
     }
 
     /// <summary>
@@ -55,20 +61,28 @@ public class WarBlackjackVariant : IGameVariant
         _ => (int)rank,
     };
 
-    /// <summary>Completes each hand to a normal two-card blackjack hand - call once the War bet has been resolved.</summary>
+    /// <summary>Deals just the dealer's second (blackjack) card - call once the War bet has been resolved for every hand.</summary>
+    public void DealDealerSecondCard(Deck deck, Hand dealerHand) => dealerHand.AddCard(deck.Draw());
+
+    /// <summary>Deals one player hand's second (blackjack) card - call once per active hand slot, once the War bet has been resolved.</summary>
+    public void DealPlayerSecondCard(Deck deck, Hand playerHand) => playerHand.AddCard(deck.Draw());
+
+    /// <summary>Completes each hand to a normal two-card blackjack hand - call once the War bet has been resolved (single-hand convenience wrapper).</summary>
     public void DealSecondCards(Deck deck, Hand playerHand, Hand dealerHand)
     {
-        playerHand.AddCard(deck.Draw());
-        dealerHand.AddCard(deck.Draw());
+        DealPlayerSecondCard(deck, playerHand);
+        DealDealerSecondCard(deck, dealerHand);
     }
 
     /// <summary>
     /// Satisfies IGameVariant for a caller that just wants "deal a full
     /// hand" with no War decision point in between - deals the War card
-    /// and the second blackjack card back-to-back. Real table play should
-    /// call DealWarCards, resolve the War bet (letting the player choose
-    /// to cash out or press it into their blackjack wager), and then call
-    /// DealSecondCards separately.
+    /// and the second blackjack card back-to-back, with the War bet
+    /// resolved automatically (no press-or-cash-out choice). Real table
+    /// play (see MainPage's War-specific flow) instead calls
+    /// DealDealerWarCard/DealPlayerWarCard, resolves the War bet - letting
+    /// the player choose to cash out or press it into their blackjack
+    /// wager - and only then calls DealDealerSecondCard/DealPlayerSecondCard.
     /// </summary>
     public void DealInitialCards(Deck deck, Hand playerHand, Hand dealerHand)
     {
@@ -80,12 +94,28 @@ public class WarBlackjackVariant : IGameVariant
     /// Deals just the dealer's opening hand for a multi-hand round: one
     /// shared War card plus the second blackjack card, dealt once per
     /// round. Every player hand's own War card (from DealPlayerOpeningHand)
-    /// is compared against this same dealer hand's first card.
+    /// is compared against this same dealer hand's first card. This is the
+    /// no-decision-point convenience path (see DealInitialCards); real
+    /// table play deals these two cards separately, with a War decision in
+    /// between - see DealDealerWarCard/DealDealerSecondCard.
     /// </summary>
-    public void DealDealerOpeningHand(Deck deck, Hand dealerHand) => _blackjackRules.DealDealerOpeningHand(deck, dealerHand);
+    public void DealDealerOpeningHand(Deck deck, Hand dealerHand)
+    {
+        DealDealerWarCard(deck, dealerHand);
+        DealDealerSecondCard(deck, dealerHand);
+    }
 
-    /// <summary>Deals one player hand's own War card plus its second blackjack card - call once per active hand slot.</summary>
-    public void DealPlayerOpeningHand(Deck deck, Hand playerHand) => _blackjackRules.DealPlayerOpeningHand(deck, playerHand);
+    /// <summary>
+    /// Deals one player hand's own War card plus its second blackjack card
+    /// - call once per active hand slot. This is the no-decision-point
+    /// convenience path; real table play deals these separately - see
+    /// DealPlayerWarCard/DealPlayerSecondCard.
+    /// </summary>
+    public void DealPlayerOpeningHand(Deck deck, Hand playerHand)
+    {
+        DealPlayerWarCard(deck, playerHand);
+        DealPlayerSecondCard(deck, playerHand);
+    }
 
     public void Hit(Deck deck, Hand hand) => _blackjackRules.Hit(deck, hand);
 
