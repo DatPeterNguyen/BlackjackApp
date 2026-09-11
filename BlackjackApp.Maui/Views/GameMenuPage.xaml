@@ -6,18 +6,38 @@
              BackgroundColor="#0B3D2E">
 
     <!--
-        The game menu (item 4 on the polish list) - just two destinations
-        for now, both reachable from MainPage's top-bar Menu button instead
-        of Settings living there on its own: a rules/how-to-play reference
-        (RulesPage) and a shortcut into the existing deck/hand/variant
-        Settings page.
+        The game menu (item 4 on the polish list) - doubles as the app's
+        start screen (see the parameterless constructor and AppShell.xaml)
+        AND the mid-game menu opened from MainPage's top-bar Menu button;
+        code-behind toggles Play/ExitToMenu/Close/the stats block/Reset
+        Progress depending on which one this instance is (see
+        GameMenuPage.xaml.cs). Either way: a rules/how-to-play reference
+        (RulesPage - doubles as a mode picker on the start menu) and a
+        shortcut into the existing deck/hand/variant Settings page.
     -->
-    <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
-        <Label Text="Menu" TextColor="White" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center"/>
-        <Label x:Name="VariantSummaryLabel" Text="" TextColor="#8FBFA9" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,10"/>
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
+            <Label x:Name="MenuTitleLabel" Text="Menu" TextColor="White" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center"/>
+            <Label x:Name="VariantSummaryLabel" Text="" TextColor="#8FBFA9" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,4"/>
 
-        <Button x:Name="HowToPlayButton" Text="How to Play" HeightRequest="50" FontSize="16" Clicked="HowToPlayButton_OnClicked"/>
-        <Button x:Name="TableSettingsButton" Text="Table Settings" HeightRequest="50" FontSize="16" Clicked="TableSettingsButton_OnClicked"/>
-        <Button x:Name="CloseButton" Text="Close" HeightRequest="44" Margin="0,20,0,0" Clicked="CloseButton_OnClicked"/>
-    </VerticalStackLayout>
+            <!-- Start menu only (item 13) - the player's lifetime win/loss/push record and profit tracking, loaded straight from GameProgressStorage. -->
+            <Border x:Name="StatsBorder" Stroke="#3A6B57" StrokeThickness="1" StrokeShape="RoundRectangle 8"
+                    BackgroundColor="#0E4433" Padding="12" Margin="0,0,0,6">
+                <VerticalStackLayout Spacing="4">
+                    <Label x:Name="RecordLabel" Text="Record: 0W - 0L - 0P" TextColor="White" FontSize="13" HorizontalOptions="Center"/>
+                    <Label x:Name="NetProfitLabel" Text="Lifetime: $0" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="BiggestWinLossLabel" Text="Biggest win: $0  |  Biggest loss: $0" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+            </Border>
+
+            <Button x:Name="PlayButton" Text="Play" HeightRequest="50" FontSize="16" FontAttributes="Bold" Clicked="PlayButton_OnClicked"/>
+            <Button x:Name="HowToPlayButton" Text="How to Play" HeightRequest="50" FontSize="16" Clicked="HowToPlayButton_OnClicked"/>
+            <Button x:Name="TableSettingsButton" Text="Table Settings" HeightRequest="50" FontSize="16" Clicked="TableSettingsButton_OnClicked"/>
+            <!-- Mid-game only - abandons the current game entirely and returns to the real start menu, where a new game (mode/decks/hands and all) can be started fresh. -->
+            <Button x:Name="ExitToMenuButton" Text="Exit to Menu" HeightRequest="44" Margin="0,10,0,0" Clicked="ExitToMenuButton_OnClicked"/>
+            <!-- Start menu only (item 13) - resets the saved balance and lifetime stats back to a fresh start. -->
+            <Button x:Name="ResetProgressButton" Text="Reset Progress" HeightRequest="40" FontSize="13" Margin="0,10,0,0" Clicked="ResetProgressButton_OnClicked"/>
+            <Button x:Name="CloseButton" Text="Close" HeightRequest="44" Clicked="CloseButton_OnClicked"/>
+        </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

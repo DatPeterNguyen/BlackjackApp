@@ -49,8 +49,11 @@ public partial class MainPage : ContentPage
     private Deck? _deck;
     private Hand _dealerHand = new();
 
-    /// <summary>Owns the balance and enforces the table's $1-$10,000 per-hand betting limits (see ChipWallet).</summary>
-    private readonly ChipWallet _wallet = new(startingBalance: 1000m);
+    /// <summary>Owns the balance and enforces the table's $1-$10,000 per-hand betting limits (see ChipWallet). Starting balance is whatever was last saved (see GameProgressStorage), or the $1,000 default for a brand new player.</summary>
+    private readonly ChipWallet _wallet = new(GameProgressStorage.LoadBalance());
+
+    /// <summary>The player's lifetime win/loss/push record and profit tracking (item 13 on the polish list) - loaded from the same saved progress as the wallet, and persisted again (see GameProgressStorage) every time a round finishes.</summary>
+    private readonly GameStats _stats = GameProgressStorage.LoadStats();
 
     /// <summary>One entry per active hand slot (1-5), rebuilt whenever the hand count changes.</summary>
     private List<PlayerHandSlot> _hands = new();
@@ -145,9 +148,24 @@ public partial class MainPage : ContentPage
     /// <summary>How long a hand's chip image takes to fade in when a bet is placed on it.</summary>
     private const uint ChipPlacedAnimationDurationMs = 180;
 
-    public MainPage()
+    /// <summary>Parameterless overload kept for anything that still expects a default-constructible page (e.g. design-time tooling) - matches the field initializers' own defaults (Standard Blackjack, 4 decks, 1 hand).</summary>
+    public MainPage() : this(new StandardBlackjackVariant(), 4, 1)
+    {
+    }
+
+    /// <summary>
+    /// The game now starts at GameMenuPage (see AppShell.xaml) - its Play
+    /// button opens RulesPage as a mode picker, where tapping a variant
+    /// selects it and RulesPage's own Play button confirms, landing here
+    /// with whatever variant/deck/hand count the player picked.
+    /// </summary>
+    public MainPage(IGameVariant initialVariant, int initialDeckCount, int initialHandCount)
     {
         InitializeComponent();
+
+        _variant = initialVariant;
+        _deckCount = initialDeckCount;
+        _handCount = initialHandCount;
 
         // Matches the wallet's actual starting balance so switching to War
         // before ever dealing a hand shows a real "$0" total instead of the
@@ -804,8 +822,17 @@ public partial class MainPage : ContentPage
         _wallet.Add(slot.Bet + payout);
         slot.ResultText += DescribeOutcome(outcome, payout);
         slot.ResolvedEarly = true;
+        _stats.RecordHand(ClassifyHandResult(outcome));
         UpdateBalanceText();
     }
+
+    /// <summary>Maps a resolved hand's RoundOutcome onto the simpler win/loss/push bucket GameStats tracks.</summary>
+    private static HandResult ClassifyHandResult(RoundOutcome outcome) => outcome switch
+    {
+        RoundOutcome.PlayerBlackjack or RoundOutcome.PlayerWin or RoundOutcome.DealerBust => HandResult.Win,
+        RoundOutcome.DealerWin or RoundOutcome.PlayerBust => HandResult.Loss,
+        _ => HandResult.Push,
+    };
 
     /// <summary>True if the dealer's face-up card could possibly be part of a dealer blackjack - an Ace, or any ten-value card (10/J/Q/K).</summary>
     private static bool DealerUpCardCouldBeBlackjack(Card dealerUpCard) =>
@@ -1455,14 +1482,20 @@ public partial class MainPage : ContentPage
             _wallet.Add(slot.Bet + payout);
             slot.ResultText += DescribeOutcome(outcome, payout);
             slot.IsFinished = true;
+            _stats.RecordHand(ClassifyHandResult(outcome));
         }
 
         // The round's true net win/loss - computed from the actual wallet
         // movement since the snapshot taken at Deal, rather than re-derived
         // by summing payouts by hand, since a pressed War win blurs "War
         // money" into "blackjack money" and a hand-by-hand sum would either
-        // double-count or drop part of it.
+        // double-count or drop part of it. Recorded as this round's overall
+        // profit/loss (separately from each hand's own win/loss/push above),
+        // and everything gets saved right away so balance and stats survive
+        // an app close between rounds.
         var totalNet = _wallet.Balance - _walletBalanceAtRoundStart;
+        _stats.RecordRoundNet(totalNet);
+        GameProgressStorage.Save(_wallet, _stats);
 
         if (_variant is WarBlackjackVariant)
         {

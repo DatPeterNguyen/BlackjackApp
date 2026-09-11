@@ -4,11 +4,19 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:local="clr-namespace:BlackjackApp.Maui"
+    xmlns:views="clr-namespace:BlackjackApp.Maui.Views"
     Title="BlackjackApp.Maui">
 
+    <!--
+        The app now starts at the game menu (see GameMenuPage's
+        parameterless constructor - it defaults to Standard/4 decks/1 hand
+        and isStartMenu:true) instead of dropping straight into a table.
+        Play, or picking a mode from How to Play, pushes MainPage modally
+        from there.
+    -->
     <ShellContent
-        Title="Home"
-        ContentTemplate="{DataTemplate local:MainPage}"
-        Route="MainPage" />
+        Title="Menu"
+        ContentTemplate="{DataTemplate views:GameMenuPage}"
+        Route="GameMenu" />
 
 </Shell>
