@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BlackjackApp.Maui.Views.RulesPage"
+             Title="How to Play"
+             BackgroundColor="#0B3D2E">
+
+    <!--
+        Rules reference for all three variants (game menu item 4) - whichever
+        one is currently being played is highlighted in gold by code-behind
+        (see HighlightCurrentVariant), the other two stay here for reference.
+    -->
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="16">
+            <Label Text="How to Play" TextColor="White" FontSize="22" FontAttributes="Bold"/>
+
+            <Border x:Name="StandardSection" Stroke="#3A6B57" StrokeThickness="1" StrokeShape="RoundRectangle 8"
+                    BackgroundColor="#0E4433" Padding="14">
+                <VerticalStackLayout Spacing="6">
+                    <Label x:Name="StandardTitleLabel" Text="Standard Blackjack" TextColor="#FFD700" FontSize="16" FontAttributes="Bold"/>
+                    <Label TextColor="White" FontSize="13" LineBreakMode="WordWrap"
+                           Text="Get closer to 21 than the dealer without going over. Cards 2-10 are worth face value, face cards are worth 10, and an Ace is 1 or 11, whichever helps your hand most. Everyone gets two cards to start; the dealer's second card stays face down until their turn. Hit for another card, Stand to hold, Double Down to double your bet for exactly one more card, or Split a pair into two hands. Blackjack (a two-card 21) pays 3:2. The dealer hits on 16 or below, and also hits a soft 17 (an Ace counted as 11). Going over 21 is an automatic loss."/>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border x:Name="MadnessSection" Stroke="#3A6B57" StrokeThickness="1" StrokeShape="RoundRectangle 8"
+                    BackgroundColor="#0E4433" Padding="14">
+                <VerticalStackLayout Spacing="6">
+                    <Label x:Name="MadnessTitleLabel" Text="Black Double Down Madness" TextColor="#FFD700" FontSize="16" FontAttributes="Bold"/>
+                    <Label TextColor="White" FontSize="13" LineBreakMode="WordWrap"
+                           Text="A wilder take on blackjack. You start with just ONE card instead of two (the dealer still gets two), and splitting isn't offered at all. You can Double Down almost any time, even more than once in a row, taking a hit after each double. The one exception: if your very first card is an Ace, you get exactly one more card and your hand locks - no more hitting or doubling. Blackjack still pays 3:2, and the dealer hits on soft 17 just like Standard. The signature twist: if the dealer's final total lands on exactly 22, it's a push (your bet is returned) instead of a bust - anything above 22 is still a real bust."/>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border x:Name="WarSection" Stroke="#3A6B57" StrokeThickness="1" StrokeShape="RoundRectangle 8"
+                    BackgroundColor="#0E4433" Padding="14">
+                <VerticalStackLayout Spacing="6">
+                    <Label x:Name="WarTitleLabel" Text="War Blackjack" TextColor="#FFD700" FontSize="16" FontAttributes="Bold"/>
+                    <Label TextColor="White" FontSize="13" LineBreakMode="WordWrap"
+                           Text="A normal blackjack hand (same house rules as Standard: dealer hits soft 17, blackjack pays 3:2) with a War side bet layered on top. Place a blackjack bet and, if you want in on the side action, a War bet too. Each side gets one card first - the higher card wins the War bet (Ace counts LOW here, unlike in blackjack scoring), and the dealer wins ties. Win the War, and you can Press it into your blackjack bet or Cash Out and bank it right away. Then everyone's dealt their second card and blackjack plays out exactly like Standard Blackjack."/>
+                </VerticalStackLayout>
+            </Border>
+
+            <Button x:Name="CloseButton" Text="Close" WidthRequest="100" HeightRequest="36"
+                    HorizontalOptions="End" Margin="0,8,0,0" Clicked="CloseButton_OnClicked"/>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

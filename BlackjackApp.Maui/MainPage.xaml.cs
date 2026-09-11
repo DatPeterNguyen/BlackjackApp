@@ -226,7 +226,10 @@ public partial class MainPage : ContentPage
             HorizontalOptions = LayoutOptions.Fill,
             WidthRequest = HandSlotCardsWidth, // pinned explicitly - a Fill request alone wasn't reliably resolving to a real width inside the stack
         };
-        var chipImage = new Image { HeightRequest = 28 };
+        // A single chip image (whichever denomination the bet amount maps
+        // to) plus a plain "Bet: $X" label - built/rebuilt by
+        // UpdateHandSlotBetDisplay.
+        var chipImage = new Image { HeightRequest = 32, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
         var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
         var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11, IsVisible = _variant is WarBlackjackVariant };
         var valueLabel = new Label { Text = "", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
@@ -254,6 +257,21 @@ public partial class MainPage : ContentPage
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) => SelectHandForBetting(handIndex);
         border.GestureRecognizers.Add(tap);
+
+        // Drop target for a dragged chip (see ChipDrag_DragStarting on the
+        // Row 5 chip tray, and HandleChipDrop) - highlights the slot while a
+        // chip is hovering over it so a drop target is obvious, then hands
+        // off to the normal highlight rules once the drag leaves or lands.
+        var drop = new DropGestureRecognizer { AllowDrop = true };
+        drop.DragOver += (_, dragOverArgs) =>
+        {
+            dragOverArgs.AcceptedOperation = DataPackageOperation.Copy;
+            border.Stroke = Color.FromArgb("#7FB3FF");
+            border.StrokeThickness = 3;
+        };
+        drop.DragLeave += (_, _) => RefreshHandSlotHighlights();
+        drop.Drop += (_, dropArgs) => HandleChipDrop(handIndex, dropArgs);
+        border.GestureRecognizers.Add(drop);
 
         var view = new HandSlotView
         {
@@ -388,61 +406,87 @@ public partial class MainPage : ContentPage
             && _wallet.Balance >= slot.Bet;
     }
 
-    private async void ChipButton_OnClicked(object? sender, EventArgs e)
+    /// <summary>
+    /// A chip in the tray (Row 5) is being dragged - stashes its dollar
+    /// denomination (carried on the Image's ClassId, since Image has no
+    /// CommandParameter) into the drag payload so whichever hand slot it's
+    /// dropped on (see the DropGestureRecognizer wired up in
+    /// CreateHandSlotView, and HandleChipDrop) knows what was dropped.
+    /// </summary>
+    private void ChipDrag_DragStarting(object? sender, DragStartingEventArgs e)
+    {
+        if (sender is Image { ClassId: { } denominationTag } && decimal.TryParse(denominationTag, out var denomination))
+        {
+            e.Data.Properties["Denomination"] = denomination;
+        }
+    }
+
+    /// <summary>
+    /// A chip was dropped onto handIndex's slot - the drag-and-drop
+    /// replacement for the old numbered chip buttons, adding the dropped
+    /// chip's denomination straight to that specific hand's bet (or its War
+    /// bet, if that's the current betting target) rather than requiring the
+    /// hand to be tapped-and-selected first.
+    /// </summary>
+    private async void HandleChipDrop(int handIndex, DropEventArgs e)
     {
         if (_roundInProgress)
         {
             return;
         }
 
-        if (sender is Button { CommandParameter: string tagValue } && int.TryParse(tagValue, out var chipValue))
+        if (!e.Data.Properties.TryGetValue("Denomination", out var raw) || raw is not decimal chipValue)
         {
-            if (_needsTableClearOnNextBet)
-            {
-                ClearTableForNewRound();
-            }
+            return;
+        }
 
-            var slot = _hands[_selectedBetIndex];
-            var targetingWarBet = _bettingTarget == BettingTarget.WarBet && _variant is WarBlackjackVariant;
-            var currentAmount = targetingWarBet ? slot.WarBet : slot.Bet;
+        if (_needsTableClearOnNextBet)
+        {
+            ClearTableForNewRound();
+        }
 
-            if (currentAmount >= ChipWallet.TableMaximum)
-            {
-                ResultLabel.Text = $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand.";
-                return;
-            }
+        SelectHandForBetting(handIndex);
 
-            // Clamp rather than reject outright, so tapping a big chip near
-            // the cap still places as much of it as the table allows.
-            var room = ChipWallet.RemainingRoomUnderMax(currentAmount);
-            var amountToAdd = (int)Math.Min(chipValue, room);
+        var slot = _hands[handIndex];
+        var targetingWarBet = _bettingTarget == BettingTarget.WarBet && _variant is WarBlackjackVariant;
+        var currentAmount = targetingWarBet ? slot.WarBet : slot.Bet;
 
-            if (targetingWarBet)
-            {
-                slot.WarBet += amountToAdd;
-            }
-            else
-            {
-                slot.Bet += amountToAdd;
-            }
+        if (currentAmount >= ChipWallet.TableMaximum)
+        {
+            ResultLabel.Text = $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand.";
+            return;
+        }
 
-            UpdateHandSlotBetDisplay(_selectedBetIndex);
-            UpdateTotalWageredText();
-            ResultLabel.Text = (targetingWarBet ? slot.WarBet : slot.Bet) >= ChipWallet.TableMaximum
-                ? $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand."
-                : "";
+        // Clamp rather than reject outright, so dropping a big chip near the
+        // cap still places as much of it as the table allows.
+        var room = ChipWallet.RemainingRoomUnderMax(currentAmount);
+        var amountToAdd = (int)Math.Min(chipValue, room);
 
-            // The chip image only ever reflects the main bet (there's no
-            // separate War-bet chip graphic), so only fade it in when a tap
-            // actually changed it.
-            if (!targetingWarBet)
-            {
-                await AnimateChipPlaced(_selectedBetIndex);
-            }
+        if (targetingWarBet)
+        {
+            slot.WarBet += amountToAdd;
+        }
+        else
+        {
+            slot.Bet += amountToAdd;
+        }
+
+        UpdateHandSlotBetDisplay(handIndex);
+        UpdateTotalWageredText();
+        ResultLabel.Text = (targetingWarBet ? slot.WarBet : slot.Bet) >= ChipWallet.TableMaximum
+            ? $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand."
+            : "";
+
+        // The chip image only ever reflects the main bet (there's no
+        // separate War-bet chip graphic), so only fade it in when a drop
+        // actually changed it.
+        if (!targetingWarBet)
+        {
+            await AnimateChipPlaced(handIndex);
         }
     }
 
-    /// <summary>Fades a hand's chip image in whenever a bet is placed or increased, so tapping a chip gives some visual feedback instead of the display just silently updating.</summary>
+    /// <summary>Fades a hand's chip image in whenever a bet is placed or increased, so dropping a chip gives some visual feedback instead of the display just silently updating.</summary>
     private async Task AnimateChipPlaced(int handIndex)
     {
         var chipImage = _handSlotViews[handIndex].ChipImage;
@@ -527,11 +571,11 @@ public partial class MainPage : ContentPage
         await AnimateChipPlaced(_selectedBetIndex);
     }
 
-    private async void SettingsButton_OnClicked(object? sender, EventArgs e)
+    private async void MenuButton_OnClicked(object? sender, EventArgs e)
     {
-        var settingsPage = new SettingsPage(_variant, _deckCount, _handCount);
-        settingsPage.SettingsSaved += OnSettingsSaved;
-        await Navigation.PushModalAsync(settingsPage);
+        var menuPage = new GameMenuPage(_variant, _deckCount, _handCount);
+        menuPage.SettingsSaved += OnSettingsSaved;
+        await Navigation.PushModalAsync(menuPage);
     }
 
     private void OnSettingsSaved(IGameVariant variant, int deckCount, int handCount)

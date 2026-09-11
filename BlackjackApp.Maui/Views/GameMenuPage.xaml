@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BlackjackApp.Maui.Views.GameMenuPage"
+             Title="Menu"
+             BackgroundColor="#0B3D2E">
+
+    <!--
+        The game menu (item 4 on the polish list) - just two destinations
+        for now, both reachable from MainPage's top-bar Menu button instead
+        of Settings living there on its own: a rules/how-to-play reference
+        (RulesPage) and a shortcut into the existing deck/hand/variant
+        Settings page.
+    -->
+    <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
+        <Label Text="Menu" TextColor="White" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center"/>
+        <Label x:Name="VariantSummaryLabel" Text="" TextColor="#8FBFA9" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,10"/>
+
+        <Button x:Name="HowToPlayButton" Text="How to Play" HeightRequest="50" FontSize="16" Clicked="HowToPlayButton_OnClicked"/>
+        <Button x:Name="TableSettingsButton" Text="Table Settings" HeightRequest="50" FontSize="16" Clicked="TableSettingsButton_OnClicked"/>
+        <Button x:Name="CloseButton" Text="Close" HeightRequest="44" Margin="0,20,0,0" Clicked="CloseButton_OnClicked"/>
+    </VerticalStackLayout>
+</ContentPage>
