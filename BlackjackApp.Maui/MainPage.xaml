@@ -26,15 +26,36 @@
                 <Button x:Name="SettingsButton" Grid.Column="1" Text="Settings" Padding="12,8" Clicked="SettingsButton_OnClicked"/>
             </Grid>
 
-            <!-- Row 1: Dealer area - live cards from the real Deck/Hand -->
-            <Border x:Name="DealerAreaBorder" Grid.Row="1" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
-                    BackgroundColor="#0E4433" Padding="8">
-                <VerticalStackLayout HorizontalOptions="Center" Spacing="6">
-                    <Label Text="Dealer" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
-                    <FlexLayout x:Name="DealerCardsLayout" Direction="Row" Wrap="Wrap" JustifyContent="Center" AlignItems="Center" HorizontalOptions="Fill"/>
-                    <Label x:Name="DealerValueLabel" Text="" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
+            <!--
+                Row 1: Dealer area - live cards from the real Deck/Hand -
+                flanked by the shoe (left, where the dealing animation's
+                cards visually come from) and the discard pile (right,
+                where each round's played cards actually go instead of
+                vanishing) it deals from and discards into.
+            -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <VerticalStackLayout Grid.Column="0" HorizontalOptions="Center" Spacing="2">
+                    <Image x:Name="ShoeImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit"/>
+                    <Label Text="Shoe" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
+                    <Label x:Name="ShoeCountLabel" Text="—" TextColor="White" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="TableLimitsLabel" Text="" TextColor="#8FBFA9" FontSize="10" HorizontalOptions="Center"/>
                 </VerticalStackLayout>
-            </Border>
+
+                <Border x:Name="DealerAreaBorder" Grid.Column="1" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
+                        BackgroundColor="#0E4433" Padding="8">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="6">
+                        <Label Text="Dealer" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
+                        <FlexLayout x:Name="DealerCardsLayout" Direction="Row" Wrap="Wrap" JustifyContent="Center" AlignItems="Center" HorizontalOptions="Fill"/>
+                        <Label x:Name="DealerValueLabel" Text="" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <VerticalStackLayout Grid.Column="2" HorizontalOptions="Center" Spacing="2">
+                    <Image x:Name="DiscardImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit" Opacity="0.55"/>
+                    <Label Text="Discard" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
+                    <Label x:Name="DiscardCountLabel" Text="0" TextColor="White" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+            </Grid>
 
             <!--
                 Row 2: Player hand slots - one per active hand (1-5, chosen

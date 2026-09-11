@@ -8,12 +8,16 @@ namespace BlackjackApp.core.Models;
 
 public class Deck
 {
-    private readonly List<Card> _cards = new(); // Empty list to store cards 
+    private readonly List<Card> _cards = new(); // Empty list to store cards
+    private readonly List<Card> _discard = new(); // Cards that have been played this shoe, waiting to be reshuffled back in
     private readonly Random _random; // Variable to store num for shuffling
 
     public int NumberOfDecks { get; } // Getter for number of decks.
 
     public int CardsRemaining => _cards.Count; // Looks at cards list and return how many is in it.
+
+    /// <summary>How many played cards are currently sitting in the discard pile, waiting for the next reshuffle.</summary>
+    public int DiscardCount => _discard.Count;
 
     public Deck(int numberOfDecks = 4, Random? random = null)
     {
@@ -37,6 +41,7 @@ public class Deck
          * Clears the table, get new cards, and combine them into a large stack before shuffling them.
          */
         _cards.Clear(); // Deletes left over cards from previous round.
+        _discard.Clear(); // A brand new shoe starts with nothing played yet.
 
         // Adds new cards to deck
         for (var deckIndex = 0; deckIndex < NumberOfDecks; deckIndex++)
@@ -80,5 +85,33 @@ public class Deck
         var card = _cards[topIndex];
         _cards.RemoveAt(topIndex);
         return card;
+    }
+
+    /// <summary>
+    /// Moves a finished hand's (or the dealer's) cards into the discard
+    /// pile once a round is over. These cards stay out of play - visibly
+    /// "removed", not silently vanished - until the shoe actually needs
+    /// reshuffling.
+    /// </summary>
+    public void Discard(IEnumerable<Card> cards) => _discard.AddRange(cards);
+
+    /// <summary>
+    /// True once the shoe has been played down to (or below) a cut-card
+    /// threshold and needs reshuffling before the next round. Callers
+    /// typically check this between rounds, never mid-round.
+    /// </summary>
+    public bool NeedsReshuffle(int cutCardThreshold) => _cards.Count <= cutCardThreshold;
+
+    /// <summary>
+    /// Shuffles every discarded card back into the shoe. This is the only
+    /// way previously-played cards come back into play - unlike rebuilding
+    /// a whole new Deck, it reuses the shoe's actual discard pile rather
+    /// than conjuring a fresh, fully-stocked one from nowhere.
+    /// </summary>
+    public void ReshuffleDiscardIntoShoe()
+    {
+        _cards.AddRange(_discard);
+        _discard.Clear();
+        Shuffle();
     }
 }

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using BlackjackApp.core.Economy;
 using BlackjackApp.core.Models;
 using BlackjackApp.core.Variants;
@@ -18,12 +20,14 @@ namespace BlackjackApp.Maui;
 /// against the SAME shared dealer hand (per the design doc's 1-5 hand
 /// setting).
 ///
-/// Turn order: hands play left to right. _activeHandIndex is whichever
-/// slot Hit/Stand/Double currently apply to; when that hand finishes
-/// (bust, stand, doubled-and-done, or can no longer act), play advances to
-/// the next unfinished hand. Once every hand is finished, EndRound plays
-/// the dealer once and resolves every hand's outcome/payout against that
-/// one dealer hand.
+/// Turn order: hands play in the same order they were dealt in - rightmost
+/// hand slot first (dealt first, same as a real dealer starting at their
+/// own left), moving down to the leftmost, dealer last. _activeHandIndex is
+/// whichever slot Hit/Stand/Double currently apply to; when that hand
+/// finishes (bust, stand, doubled-and-done, or can no longer act), play
+/// advances to the next unfinished hand (the next lower index). Once every
+/// hand is finished, EndRound plays the dealer once and resolves every
+/// hand's outcome/payout against that one dealer hand.
 ///
 /// Before a round starts, tapping a hand slot selects it as the current
 /// betting target - chip taps and Clear apply to whichever slot is
@@ -93,6 +97,27 @@ public partial class MainPage : ContentPage
     /// </summary>
     private bool _needsTableClearOnNextBet;
 
+    /// <summary>
+    /// True once the just-finished round's cards have actually been moved
+    /// into the deck's discard pile - either by the 5-second auto-discard
+    /// below, or (if the player deals again before that timer fires) by
+    /// DealButton_OnClicked's own fallback. Starts true (nothing to
+    /// discard yet); guards against ever discarding the same round's cards
+    /// twice.
+    /// </summary>
+    private bool _roundCardsDiscarded = true;
+
+    /// <summary>Cancels the pending 5-second auto-discard if a new round starts before it fires.</summary>
+    private CancellationTokenSource? _autoDiscardCts;
+
+    /// <summary>
+    /// Bumped every time a new round actually starts dealing. Lets a
+    /// still-in-flight discard-to-pile animation tell, once it finishes,
+    /// whether a new round's cards have since been dealt onto the table -
+    /// if so, it skips wiping the display so it doesn't erase them.
+    /// </summary>
+    private int _roundGeneration;
+
     /// <summary>Card image height used inside a hand slot - smaller than the dealer's so several fit across one slot's width before wrapping.</summary>
     private const double HandSlotCardHeight = 56;
 
@@ -101,6 +126,24 @@ public partial class MainPage : ContentPage
 
     /// <summary>Outer hand slot Border width - HandSlotCardsWidth plus room for its Padding/Border.</summary>
     private const double HandSlotBorderWidth = HandSlotCardsWidth + 16;
+
+    /// <summary>How long each dealt card's fly-in-from-the-shoe animation takes.</summary>
+    private const uint CardDealAnimationDurationMs = 220;
+
+    /// <summary>Pause after each card lands before the next one is dealt, so a deal reads as one card at a time instead of everything landing at once.</summary>
+    private const int CardDealStaggerMs = 90;
+
+    /// <summary>How long a finished round's cards stay on the table before they automatically fly off to the discard pile.</summary>
+    private static readonly TimeSpan TableHoldBeforeDiscard = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long each card's fly-to-the-discard-pile animation takes.</summary>
+    private const uint CardDiscardAnimationDurationMs = 260;
+
+    /// <summary>Stagger between each card starting its fly-to-discard animation, so the whole table doesn't leave at once.</summary>
+    private const int CardDiscardStaggerMs = 40;
+
+    /// <summary>How long a hand's chip image takes to fade in when a bet is placed on it.</summary>
+    private const uint ChipPlacedAnimationDurationMs = 180;
 
     public MainPage()
     {
@@ -111,10 +154,13 @@ public partial class MainPage : ContentPage
         // whole starting balance read as profit.
         _walletBalanceAtRoundStart = _wallet.Balance;
 
+        TableLimitsLabel.Text = $"${ChipWallet.TableMinimum:N0} - ${ChipWallet.TableMaximum:N0}";
+
         BuildHandSlots();
         UpdateBalanceText();
         UpdateVariantLabel();
         UpdateTableColors();
+        UpdateShoeDisplay();
     }
 
     /// <summary>Bundles the dynamically-created views for one hand slot, since XAML can't name a variable (1-5) number of them.</summary>
@@ -302,7 +348,7 @@ public partial class MainPage : ContentPage
         }
     }
 
-    private void ChipButton_OnClicked(object? sender, EventArgs e)
+    private async void ChipButton_OnClicked(object? sender, EventArgs e)
     {
         if (_roundInProgress)
         {
@@ -345,7 +391,29 @@ public partial class MainPage : ContentPage
             ResultLabel.Text = (targetingWarBet ? slot.WarBet : slot.Bet) >= ChipWallet.TableMaximum
                 ? $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand."
                 : "";
+
+            // The chip image only ever reflects the main bet (there's no
+            // separate War-bet chip graphic), so only fade it in when a tap
+            // actually changed it.
+            if (!targetingWarBet)
+            {
+                await AnimateChipPlaced(_selectedBetIndex);
+            }
         }
+    }
+
+    /// <summary>Fades a hand's chip image in whenever a bet is placed or increased, so tapping a chip gives some visual feedback instead of the display just silently updating.</summary>
+    private async Task AnimateChipPlaced(int handIndex)
+    {
+        var chipImage = _handSlotViews[handIndex].ChipImage;
+
+        if (chipImage.Source is null)
+        {
+            return;
+        }
+
+        chipImage.Opacity = 0;
+        await chipImage.FadeToAsync(1, ChipPlacedAnimationDurationMs);
     }
 
     private void ClearBetButton_OnClicked(object? sender, EventArgs e)
@@ -388,7 +456,7 @@ public partial class MainPage : ContentPage
     /// since splitting "everything" across several independently-sized
     /// hands wouldn't have one obvious meaning.
     /// </summary>
-    private void AllInButton_OnClicked(object? sender, EventArgs e)
+    private async void AllInButton_OnClicked(object? sender, EventArgs e)
     {
         if (_roundInProgress || _handCount != 1)
         {
@@ -415,6 +483,8 @@ public partial class MainPage : ContentPage
         ResultLabel.Text = allInAmount >= ChipWallet.TableMaximum
             ? $"Table maximum is ${ChipWallet.TableMaximum:N0} per hand."
             : "";
+
+        await AnimateChipPlaced(_selectedBetIndex);
     }
 
     private async void SettingsButton_OnClicked(object? sender, EventArgs e)
@@ -446,6 +516,7 @@ public partial class MainPage : ContentPage
         _variant = variant;
         _deckCount = deckCount;
         _deck = null; // force a fresh shoe built at the new deck count on the next Deal
+        UpdateShoeDisplay();
 
         if (handCount != _handCount)
         {
@@ -461,7 +532,7 @@ public partial class MainPage : ContentPage
         UpdateTableColors();
     }
 
-    private void DealButton_OnClicked(object? sender, EventArgs e)
+    private async void DealButton_OnClicked(object? sender, EventArgs e)
     {
         if (_roundInProgress)
         {
@@ -502,14 +573,48 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        // Build a fresh shoe the first time, once it's running low (scaled
-        // by how many hands are being dealt this round), or once the deck
-        // count changed in Settings. Reshuffling only between rounds
-        // (never mid-round) keeps this simple for now.
-        if (_deck is null || _deck.CardsRemaining < 15 * _handCount)
+        // A new round is starting right now - stop the 5-second
+        // auto-discard countdown (or a still-running fly-to-discard
+        // animation) from doing anything further to the table once this
+        // round's own cards are on it.
+        _autoDiscardCts?.Cancel();
+        _roundGeneration++;
+
+        // Move the previous round's cards into the discard pile instead of
+        // silently vanishing them, then only reshuffle the shoe once it's
+        // actually been played down past the cut-card threshold (scaled by
+        // how many hands are being dealt this round). A brand-new shoe is
+        // only ever built the first time, or once the deck count changed in
+        // Settings - from then on it's the same shoe, discarded into and
+        // reshuffled from, never silently swapped for a fresh one.
+        if (_deck is null)
         {
             _deck = new Deck(numberOfDecks: _deckCount);
         }
+        else
+        {
+            if (!_roundCardsDiscarded)
+            {
+                // The previous round's auto-discard hasn't happened yet
+                // (the 5-second hold hasn't elapsed) - do it now, instantly,
+                // since a new round is starting immediately regardless.
+                _deck.Discard(_dealerHand.Cards);
+
+                foreach (var previousHand in _hands)
+                {
+                    _deck.Discard(previousHand.Hand.Cards);
+                }
+
+                _roundCardsDiscarded = true;
+            }
+
+            if (_deck.NeedsReshuffle(CutCardThreshold(_handCount)))
+            {
+                _deck.ReshuffleDiscardIntoShoe();
+            }
+        }
+
+        UpdateShoeDisplay();
 
         // Fresh hands for the new round, keeping each slot's bet(s).
         var bets = _hands.Select(h => (h.Bet, h.WarBet)).ToList();
@@ -530,22 +635,27 @@ public partial class MainPage : ContentPage
             StandButton.IsEnabled = false;
             DoubleButton.IsEnabled = false;
             SplitButton.IsEnabled = false;
-            StartWarPhase(warVariant);
+            await StartWarPhase(warVariant);
         }
         else
         {
-            DealOpeningHandsAndStartPlay();
+            await DealOpeningHandsAndStartPlay();
         }
     }
 
-    /// <summary>Non-War path: deals every hand's normal two-card opening hand in one shot and starts play (or resolves immediately on an all-blackjack round).</summary>
-    private void DealOpeningHandsAndStartPlay()
+    /// <summary>How many cards left in the shoe triggers a reshuffle-before-next-round, scaled by how many hands are being dealt.</summary>
+    private static int CutCardThreshold(int handCount) => 15 * handCount;
+
+    /// <summary>Non-War path: deals every hand's normal two-card opening hand at the model level, then plays the dealt-left-of-dealer, dealer-last reveal animation and starts play (or resolves immediately on an all-blackjack round).</summary>
+    private async Task DealOpeningHandsAndStartPlay()
     {
         if (_deck is null)
         {
             return;
         }
 
+        // The model-level dealing itself is instant - it's just data. Only
+        // the on-screen reveal below is sequenced/animated.
         _variant.DealDealerOpeningHand(_deck, _dealerHand);
 
         foreach (var slot in _hands)
@@ -554,19 +664,25 @@ public partial class MainPage : ContentPage
 
             // A natural blackjack finishes this hand immediately, but other
             // hands may still need to play - it just gets skipped in turn
-            // order and resolved together with everyone else in EndRound.
+            // order. Its payout, though, cashes out right now rather than
+            // waiting on the rest of the round - see TryPayEarlyBlackjack.
             if (slot.Hand.IsBlackjack)
             {
                 slot.IsFinished = true;
+                TryPayEarlyBlackjack(slot);
             }
         }
 
-        RenderAllHandSlots(hideHoleCard: true);
-        _activeHandIndex = _hands.FindIndex(h => !h.IsFinished);
+        UpdateShoeDisplay();
+        await RevealOpeningDeal(hideDealerHoleCard: true);
+
+        // Turn order plays rightmost-hand-first, same as the deal, so play
+        // starts on the highest-index unfinished hand, not the lowest.
+        _activeHandIndex = _hands.FindLastIndex(h => !h.IsFinished);
 
         if (_activeHandIndex == -1)
         {
-            EndRound();
+            await EndRound();
         }
         else
         {
@@ -575,12 +691,184 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
+    /// Pays out a natural blackjack the moment it's dealt, instead of
+    /// making it wait through every other hand's turn and the dealer's own
+    /// play - UNLESS the dealer's face-up card could itself be part of a
+    /// dealer blackjack (an Ace, or any ten-value card), in which case a
+    /// dealer blackjack underneath would push rather than lose, and this
+    /// hand has to wait for that hidden card to be revealed at EndRound
+    /// before it's safe to settle. When it's safe, the outcome is already
+    /// fully determined by the two hands as they stand right now - the
+    /// dealer hasn't drawn any further cards, but a player natural beats
+    /// any non-blackjack dealer total no matter what it later becomes, so
+    /// there's nothing left to wait for.
+    /// </summary>
+    private void TryPayEarlyBlackjack(PlayerHandSlot slot)
+    {
+        if (!slot.Hand.IsBlackjack || slot.ResolvedEarly)
+        {
+            return;
+        }
+
+        if (_dealerHand.Cards.Count == 0 || DealerUpCardCouldBeBlackjack(_dealerHand.Cards[0]))
+        {
+            return;
+        }
+
+        var outcome = _variant.DetermineOutcome(slot.Hand, _dealerHand);
+        var payout = _variant.ResolvePayout(slot.Hand, _dealerHand, slot.Bet);
+
+        _wallet.Add(slot.Bet + payout);
+        slot.ResultText += DescribeOutcome(outcome, payout);
+        slot.ResolvedEarly = true;
+        UpdateBalanceText();
+    }
+
+    /// <summary>True if the dealer's face-up card could possibly be part of a dealer blackjack - an Ace, or any ten-value card (10/J/Q/K).</summary>
+    private static bool DealerUpCardCouldBeBlackjack(Card dealerUpCard) =>
+        dealerUpCard.Rank == Rank.Ace || Hand.PointValue(dealerUpCard.Rank) == 10;
+
+    /// <summary>
+    /// Plays the "cards fly in from the shoe" reveal for a full round of
+    /// opening cards that have already been dealt at the model level, the
+    /// way a real dealer actually deals them: one card at a time, round by
+    /// round, NOT a whole hand at once - everyone's first card, then
+    /// everyone's second card (and so on, for variants dealing more), with
+    /// the dealer's own card dealt last in each round. Within a round, the
+    /// dealer deals starting with the player at their own left and moves
+    /// clockwise; from our on-screen view - facing the dealer, hands laid
+    /// out left to right - that's the dealer's left being our right, so the
+    /// rightmost hand slot goes first, on down to the leftmost, then
+    /// finally the dealer. The model already holds every hand's final
+    /// cards; this only controls how they visually appear.
+    /// </summary>
+    private async Task RevealOpeningDeal(bool hideDealerHoleCard)
+    {
+        foreach (var view in _handSlotViews)
+        {
+            view.CardsLayout.Children.Clear();
+        }
+
+        DealerCardsLayout.Children.Clear();
+
+        var maxRounds = Math.Max(
+            _hands.Count > 0 ? _hands.Max(h => h.Hand.Cards.Count) : 0,
+            _dealerHand.Cards.Count);
+
+        for (var round = 0; round < maxRounds; round++)
+        {
+            for (var i = _hands.Count - 1; i >= 0; i--)
+            {
+                var slot = _hands[i];
+
+                if (round >= slot.Hand.Cards.Count)
+                {
+                    continue;
+                }
+
+                var view = _handSlotViews[i];
+                await DealAnimatedCard(view.CardsLayout, CardImageFile(slot.Hand.Cards[round]), HandSlotCardHeight);
+                await Task.Delay(CardDealStaggerMs);
+            }
+
+            if (round < _dealerHand.Cards.Count)
+            {
+                var showFaceDown = hideDealerHoleCard && round == 1;
+                var imageFile = showFaceDown ? "back_red.png" : CardImageFile(_dealerHand.Cards[round]);
+                await DealAnimatedCard(DealerCardsLayout, imageFile, 130);
+                await Task.Delay(CardDealStaggerMs);
+            }
+        }
+
+        // Every card is now on the table - fill in the value/result labels
+        // once at the end, rather than reading a hand's final value off of
+        // it before every one of its cards has actually been revealed.
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            var slot = _hands[i];
+            var view = _handSlotViews[i];
+            view.ValueLabel.Text = slot.Hand.Cards.Count > 0 ? $"Value: {slot.Hand.GetBestValue().Value}" : "";
+            view.ResultLabel.Text = slot.ResultText;
+        }
+
+        UpdateDealerValueLabel(hideDealerHoleCard);
+    }
+
+    /// <summary>
+    /// Adds a card image to its final destination layout, then animates it
+    /// flying in from the shoe's on-screen position - MAUI has no built-in
+    /// "position relative to some other element" API, so both positions are
+    /// measured by walking each element's Parent chain (see
+    /// GetPositionOnPage) and the difference becomes the fly-in offset.
+    /// </summary>
+    private async Task DealAnimatedCard(Layout targetLayout, string imageFile, double height)
+    {
+        var image = CreateCardImage(imageFile, height);
+        targetLayout.Children.Add(image);
+        await AnimateCardFromShoe(image);
+    }
+
+    /// <summary>
+    /// Best-effort fly-in-from-the-shoe animation for one already-placed
+    /// card image. Falls back to a plain fade-in in place if layout hasn't
+    /// happened yet and positions can't be measured (both would read as
+    /// (0,0), giving no offset) - it never guesses a wrong direction.
+    /// </summary>
+    private async Task AnimateCardFromShoe(View cardImage)
+    {
+        cardImage.Opacity = 0;
+
+        // Let MAUI finish a layout pass so the card actually has real
+        // Bounds to read before measuring positions off of it.
+        await Task.Yield();
+
+        var shoePosition = GetPositionOnPage(ShoeImage);
+        var cardPosition = GetPositionOnPage(cardImage);
+
+        cardImage.TranslationX = shoePosition.X - cardPosition.X;
+        cardImage.TranslationY = shoePosition.Y - cardPosition.Y;
+
+        await Task.WhenAll(
+            cardImage.TranslateToAsync(0, 0, CardDealAnimationDurationMs, Easing.CubicOut),
+            cardImage.FadeToAsync(1, CardDealAnimationDurationMs));
+    }
+
+    /// <summary>
+    /// Walks up the visual tree from `element`, summing each ancestor's
+    /// Bounds offset, to get its position relative to the outermost
+    /// page-level layout. Used to measure both the shoe's and a newly-added
+    /// card's position so the difference can drive the deal animation.
+    /// </summary>
+    private static (double X, double Y) GetPositionOnPage(VisualElement element)
+    {
+        double x = 0;
+        double y = 0;
+        Element? current = element;
+
+        while (current is VisualElement visual)
+        {
+            x += visual.Bounds.X;
+            y += visual.Bounds.Y;
+            current = current.Parent;
+        }
+
+        return (x, y);
+    }
+
+    /// <summary>Refreshes the shoe/discard-pile counts shown next to the dealer area.</summary>
+    private void UpdateShoeDisplay()
+    {
+        ShoeCountLabel.Text = _deck is null ? "—" : $"{_deck.CardsRemaining}";
+        DiscardCountLabel.Text = _deck is null ? "0" : $"{_deck.DiscardCount}";
+    }
+
+    /// <summary>
     /// War path, phase 1: deals the one shared dealer War card and each
     /// hand's own War card, immediately settles any hand that lost or tied
     /// its War bet (dealer wins ties), and queues up a Press-or-Cash-Out
     /// decision for every hand that won one.
     /// </summary>
-    private void StartWarPhase(WarBlackjackVariant warVariant)
+    private async Task StartWarPhase(WarBlackjackVariant warVariant)
     {
         if (_deck is null)
         {
@@ -594,11 +882,16 @@ public partial class MainPage : ContentPage
             warVariant.DealPlayerWarCard(_deck, slot.Hand);
         }
 
-        RenderAllHandSlots(hideHoleCard: false); // no hole card exists yet - both War cards are shown face-up
+        UpdateShoeDisplay();
+        // No hole card exists yet - both War cards are shown face-up.
+        await RevealOpeningDeal(hideDealerHoleCard: false);
 
         _warDecisionQueue.Clear();
 
-        for (var i = 0; i < _hands.Count; i++)
+        // Same rightmost-hand-first order as the deal and blackjack turn
+        // order, so Press/Cash-Out decisions are asked in the same order
+        // hands were dealt.
+        for (var i = _hands.Count - 1; i >= 0; i--)
         {
             var slot = _hands[i];
 
@@ -628,11 +921,11 @@ public partial class MainPage : ContentPage
         // round has actually finished. It stays at the "$0" it was reset to
         // when betting started, and only shows the real result once
         // EndRound resolves the whole round.
-        AdvanceWarDecisionQueue();
+        await AdvanceWarDecisionQueue();
     }
 
     /// <summary>Moves to the next hand with a pending War decision, or - once the queue is empty - deals every hand's second card and starts real blackjack play.</summary>
-    private void AdvanceWarDecisionQueue()
+    private async Task AdvanceWarDecisionQueue()
     {
         if (_warDecisionQueue.Count == 0)
         {
@@ -640,7 +933,7 @@ public partial class MainPage : ContentPage
             PressWarButton.IsVisible = false;
             CashOutWarButton.IsVisible = false;
             ResultLabel.Text = "";
-            DealOpeningSecondCardsAndStartPlay();
+            await DealOpeningSecondCardsAndStartPlay();
             return;
         }
 
@@ -658,7 +951,7 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>Folds this hand's War stake plus its 1:1 winnings straight into its blackjack bet, putting it at risk for the rest of the round instead of banking it.</summary>
-    private void PressWarButton_OnClicked(object? sender, EventArgs e)
+    private async void PressWarButton_OnClicked(object? sender, EventArgs e)
     {
         if (_pendingWarDecisionHandIndex < 0)
         {
@@ -677,11 +970,11 @@ public partial class MainPage : ContentPage
         UpdateTotalWageredText();
         RenderHandSlot(_pendingWarDecisionHandIndex);
 
-        AdvanceWarDecisionQueue();
+        await AdvanceWarDecisionQueue();
     }
 
     /// <summary>Banks this hand's War stake plus its 1:1 winnings straight into the balance, leaving the blackjack bet untouched.</summary>
-    private void CashOutWarButton_OnClicked(object? sender, EventArgs e)
+    private async void CashOutWarButton_OnClicked(object? sender, EventArgs e)
     {
         if (_pendingWarDecisionHandIndex < 0)
         {
@@ -699,11 +992,11 @@ public partial class MainPage : ContentPage
         UpdateBalanceText();
         RenderHandSlot(_pendingWarDecisionHandIndex);
 
-        AdvanceWarDecisionQueue();
+        await AdvanceWarDecisionQueue();
     }
 
-    /// <summary>War path, phase 2: once every War decision is settled, deals the dealer's and each hand's second card and starts real blackjack play (or resolves immediately on an all-blackjack round).</summary>
-    private void DealOpeningSecondCardsAndStartPlay()
+    /// <summary>War path, phase 2: once every War decision is settled, deals the dealer's and each hand's second card, plays the fly-in-from-the-shoe reveal for just those new cards, and starts real blackjack play (or resolves immediately on an all-blackjack round).</summary>
+    private async Task DealOpeningSecondCardsAndStartPlay()
     {
         if (_deck is null || _variant is not WarBlackjackVariant warVariant)
         {
@@ -719,15 +1012,20 @@ public partial class MainPage : ContentPage
             if (slot.Hand.IsBlackjack)
             {
                 slot.IsFinished = true;
+                TryPayEarlyBlackjack(slot);
             }
         }
 
-        RenderAllHandSlots(hideHoleCard: true);
-        _activeHandIndex = _hands.FindIndex(h => !h.IsFinished);
+        UpdateShoeDisplay();
+        await RevealSecondCards();
+
+        // Turn order plays rightmost-hand-first, same as the deal, so play
+        // starts on the highest-index unfinished hand, not the lowest.
+        _activeHandIndex = _hands.FindLastIndex(h => !h.IsFinished);
 
         if (_activeHandIndex == -1)
         {
-            EndRound();
+            await EndRound();
         }
         else
         {
@@ -736,7 +1034,31 @@ public partial class MainPage : ContentPage
         }
     }
 
-    private void HitButton_OnClicked(object? sender, EventArgs e)
+    /// <summary>
+    /// Plays the fly-in-from-the-shoe reveal for just the War path's second
+    /// round of cards (the War cards are already on the table) - every
+    /// hand's new card, dealt in the same rightmost-first, dealer-last
+    /// order as the opening deal, then the dealer's face-down hole card.
+    /// </summary>
+    private async Task RevealSecondCards()
+    {
+        for (var i = _hands.Count - 1; i >= 0; i--)
+        {
+            var slot = _hands[i];
+            var view = _handSlotViews[i];
+            var newCard = slot.Hand.Cards[^1];
+
+            await DealAnimatedCard(view.CardsLayout, CardImageFile(newCard), HandSlotCardHeight);
+            view.ValueLabel.Text = $"Value: {slot.Hand.GetBestValue().Value}";
+            view.ResultLabel.Text = slot.ResultText;
+            await Task.Delay(CardDealStaggerMs);
+        }
+
+        await DealAnimatedCard(DealerCardsLayout, "back_red.png", 130); // the dealer's second card stays hidden as the hole card
+        UpdateDealerValueLabel(hideHoleCard: true);
+    }
+
+    private async void HitButton_OnClicked(object? sender, EventArgs e)
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -752,11 +1074,12 @@ public partial class MainPage : ContentPage
         }
 
         _variant.Hit(_deck, slot.Hand);
-        RenderHandSlot(_activeHandIndex);
-        ContinueOrAdvance(cameFromDouble: false);
+        UpdateShoeDisplay();
+        await RevealNewCardInHand(_activeHandIndex);
+        await ContinueOrAdvance(cameFromDouble: false);
     }
 
-    private void StandButton_OnClicked(object? sender, EventArgs e)
+    private async void StandButton_OnClicked(object? sender, EventArgs e)
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -764,10 +1087,10 @@ public partial class MainPage : ContentPage
         }
 
         _hands[_activeHandIndex].IsFinished = true;
-        AdvanceToNextHandOrEndRound();
+        await AdvanceToNextHandOrEndRound();
     }
 
-    private void DoubleButton_OnClicked(object? sender, EventArgs e)
+    private async void DoubleButton_OnClicked(object? sender, EventArgs e)
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -806,22 +1129,43 @@ public partial class MainPage : ContentPage
         UpdateTotalWageredText();
 
         _variant.Hit(_deck, slot.Hand);
-        RenderHandSlot(_activeHandIndex);
-        ContinueOrAdvance(cameFromDouble: true);
+        UpdateShoeDisplay();
+        await RevealNewCardInHand(_activeHandIndex);
+        await ContinueOrAdvance(cameFromDouble: true);
+    }
+
+    /// <summary>
+    /// Animates just the newest card in a hand (the one a Hit or Double
+    /// just drew) flying in from the shoe, rather than clearing and
+    /// redrawing every card in the hand - the earlier cards are already on
+    /// the table and shouldn't re-animate every time a new one is dealt.
+    /// </summary>
+    private async Task RevealNewCardInHand(int handIndex)
+    {
+        var slot = _hands[handIndex];
+        var view = _handSlotViews[handIndex];
+        var newCard = slot.Hand.Cards[^1];
+
+        await DealAnimatedCard(view.CardsLayout, CardImageFile(newCard), HandSlotCardHeight);
+        view.ValueLabel.Text = $"Value: {slot.Hand.GetBestValue().Value}";
+        view.ResultLabel.Text = slot.ResultText;
     }
 
     /// <summary>
     /// Splits the active hand's pair into two separate hands, each getting
     /// one new card and its own equal-sized bet (an additional deduction
-    /// from the wallet). The new hand is inserted right after the original
-    /// in turn order, so play naturally continues into it once the first
-    /// half is done - no other turn-advancing code needs to know splitting
-    /// happened at all. Only one split per hand is offered (no re-splitting
-    /// a hand that already came from a split), and splitting Aces follows
-    /// the standard rule: each Ace hand gets exactly one more card and is
-    /// locked immediately, with no further hitting or doubling.
+    /// from the wallet). Turn order plays hands in descending index order
+    /// (rightmost hand slot first, matching the deal), so the new hand is
+    /// inserted right BEFORE the original's current position - which pushes
+    /// the still-active original hand's index up by one - so it's the very
+    /// next (lower-index) hand visited once the first half is done, with no
+    /// other turn-advancing code needing to know splitting happened at all.
+    /// Only one split per hand is offered (no re-splitting a hand that
+    /// already came from a split), and splitting Aces follows the standard
+    /// rule: each Ace hand gets exactly one more card and is locked
+    /// immediately, with no further hitting or doubling.
     /// </summary>
-    private void SplitButton_OnClicked(object? sender, EventArgs e)
+    private async void SplitButton_OnClicked(object? sender, EventArgs e)
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -858,6 +1202,7 @@ public partial class MainPage : ContentPage
         // One more card each, completing both hands back to two cards.
         _variant.Hit(_deck, slot.Hand);
         _variant.Hit(_deck, newSlot.Hand);
+        UpdateShoeDisplay();
 
         if (wasSplittingAces)
         {
@@ -865,8 +1210,12 @@ public partial class MainPage : ContentPage
             newSlot.IsFinished = true;
         }
 
-        var insertIndex = _activeHandIndex + 1;
+        // Insert at the original hand's current position, which pushes the
+        // original hand itself up to the next index - _activeHandIndex is
+        // bumped to match, so it still refers to the same (first-half) hand.
+        var insertIndex = _activeHandIndex;
         _hands.Insert(insertIndex, newSlot);
+        _activeHandIndex++;
 
         var (border, view) = CreateHandSlotView(insertIndex);
         _handSlotViews.Insert(insertIndex, view);
@@ -887,7 +1236,7 @@ public partial class MainPage : ContentPage
             // CanHit/CanDoubleDown, which don't know about the Ace-split
             // lock, so it has to be the direct turn-advance call instead).
             ResultLabel.Text = "";
-            AdvanceToNextHandOrEndRound();
+            await AdvanceToNextHandOrEndRound();
         }
         else
         {
@@ -904,36 +1253,38 @@ public partial class MainPage : ContentPage
     /// lock finally closing). Either way, play then advances to the next
     /// unfinished hand, or to EndRound if this was the last one.
     /// </summary>
-    private void ContinueOrAdvance(bool cameFromDouble)
+    private async Task ContinueOrAdvance(bool cameFromDouble)
     {
         var slot = _hands[_activeHandIndex];
 
         if (slot.Hand.IsBust)
         {
             slot.IsFinished = true;
-            AdvanceToNextHandOrEndRound();
+            await AdvanceToNextHandOrEndRound();
             return;
         }
 
         if (cameFromDouble && _variant.EndsTurnAfterDouble)
         {
             slot.IsFinished = true;
-            AdvanceToNextHandOrEndRound();
+            await AdvanceToNextHandOrEndRound();
             return;
         }
 
         if (!_variant.CanHit(slot.Hand) && !_variant.CanDoubleDown(slot.Hand))
         {
             slot.IsFinished = true;
-            AdvanceToNextHandOrEndRound();
+            await AdvanceToNextHandOrEndRound();
         }
     }
 
-    private void AdvanceToNextHandOrEndRound()
+    private async Task AdvanceToNextHandOrEndRound()
     {
         var nextIndex = -1;
 
-        for (var i = _activeHandIndex + 1; i < _hands.Count; i++)
+        // Turn order plays rightmost-hand-first, same as the deal - so the
+        // next hand to act is the next LOWER index, not the next higher one.
+        for (var i = _activeHandIndex - 1; i >= 0; i--)
         {
             if (!_hands[i].IsFinished)
             {
@@ -944,7 +1295,7 @@ public partial class MainPage : ContentPage
 
         if (nextIndex == -1)
         {
-            EndRound();
+            await EndRound();
         }
         else
         {
@@ -959,20 +1310,42 @@ public partial class MainPage : ContentPage
     /// against that one shared dealer hand, applies every hand's result to
     /// the balance, and resets the table so a new round of bets can be placed.
     /// </summary>
-    private void EndRound()
+    private async Task EndRound()
     {
         if (_deck is null)
         {
             return;
         }
 
+        // How many cards the dealer already had (both War cards, or the
+        // opening two) before their actual play - anything beyond this is a
+        // card their play just drew, and gets revealed one at a time below.
+        var dealerCardsBeforePlay = _dealerHand.Cards.Count;
+
         if (_hands.Any(h => !h.Hand.IsBust))
         {
             _variant.PlayDealerHand(_deck, _dealerHand);
+            UpdateShoeDisplay();
+            await RevealDealerPlay(dealerCardsBeforePlay);
+        }
+        else
+        {
+            // Every hand already busted - the dealer doesn't draw any
+            // further cards, but the hole card still needs to be flipped
+            // face-up so the final hand is visible.
+            RenderDealerHand(hideHoleCard: false);
         }
 
         foreach (var slot in _hands)
         {
+            // Already cashed out the moment it was dealt (see
+            // TryPayEarlyBlackjack) - resolving it again here would pay it
+            // a second time.
+            if (slot.ResolvedEarly)
+            {
+                continue;
+            }
+
             var outcome = _variant.DetermineOutcome(slot.Hand, _dealerHand);
             var payout = _variant.ResolvePayout(slot.Hand, _dealerHand, slot.Bet);
 
@@ -1028,7 +1401,13 @@ public partial class MainPage : ContentPage
         }
 
         UpdateBalanceText();
-        RenderAllHandSlots(hideHoleCard: false);
+
+        // The dealer's hand was already revealed card-by-card above - only
+        // the player hand slots (result text, values) still need redrawing.
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            RenderHandSlot(i);
+        }
 
         _roundInProgress = false;
         _activeHandIndex = -1;
@@ -1050,8 +1429,12 @@ public partial class MainPage : ContentPage
         RefreshHandSlotHighlights();
 
         // The finished round's cards/results stay visible for review until
-        // the player actually starts betting on the next one.
+        // the player actually starts betting on the next one - or, absent
+        // that, for the fixed hold below, before they automatically fly off
+        // to the discard pile on their own.
         _needsTableClearOnNextBet = true;
+        _roundCardsDiscarded = false;
+        _ = ScheduleAutoDiscard();
 
         if (_pendingVariant is not null && _pendingDeckCount is not null && _pendingHandCount is not null)
         {
@@ -1059,6 +1442,163 @@ public partial class MainPage : ContentPage
             _pendingVariant = null;
             _pendingDeckCount = null;
             _pendingHandCount = null;
+        }
+    }
+
+    /// <summary>
+    /// Waits out the fixed table-hold period after a round ends, then moves
+    /// that round's cards to the discard pile with a fly-away animation -
+    /// unless a new round starts (or Settings changes hand count etc.)
+    /// before the wait finishes, in which case DealButton_OnClicked's own
+    /// cancellation here just lets this quietly do nothing.
+    /// </summary>
+    private async Task ScheduleAutoDiscard()
+    {
+        _autoDiscardCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _autoDiscardCts = cts;
+
+        try
+        {
+            await Task.Delay(TableHoldBeforeDiscard, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        await DiscardTableToDiscardPile();
+    }
+
+    /// <summary>
+    /// Animates every card currently on the table flying off to the
+    /// discard pile, then actually moves them there in the model and clears
+    /// the table's display - the real-world equivalent of a dealer
+    /// sweeping a finished hand into the discard tray. Cards to discard are
+    /// snapshotted up front so a new round starting mid-animation (a rare
+    /// race right at the 5-second mark) can never end up having THIS round
+    /// discard the new round's cards instead of its own; the same new-round
+    /// check also guards the final display clear, so it never erases cards
+    /// the new round has already dealt.
+    /// </summary>
+    private async Task DiscardTableToDiscardPile()
+    {
+        if (_deck is null || _roundCardsDiscarded)
+        {
+            return;
+        }
+
+        _roundCardsDiscarded = true;
+        var generation = _roundGeneration;
+
+        var dealerCardsToDiscard = _dealerHand.Cards.ToList();
+        var handCardsToDiscard = _hands.Select(h => h.Hand.Cards.ToList()).ToList();
+        var cardViews = CollectTableCardViews();
+
+        await AnimateCardsToDiscard(cardViews);
+
+        _deck.Discard(dealerCardsToDiscard);
+
+        foreach (var cards in handCardsToDiscard)
+        {
+            _deck.Discard(cards);
+        }
+
+        UpdateShoeDisplay();
+
+        if (generation == _roundGeneration)
+        {
+            ClearTableForNewRound();
+        }
+    }
+
+    /// <summary>Every card image currently showing on the table - the dealer's and every hand's - snapshotted right before the discard-fly-away animation starts.</summary>
+    private List<View> CollectTableCardViews()
+    {
+        var views = new List<View>();
+
+        foreach (var child in DealerCardsLayout.Children)
+        {
+            if (child is View view)
+            {
+                views.Add(view);
+            }
+        }
+
+        foreach (var handView in _handSlotViews)
+        {
+            foreach (var child in handView.CardsLayout.Children)
+            {
+                if (child is View view)
+                {
+                    views.Add(view);
+                }
+            }
+        }
+
+        return views;
+    }
+
+    /// <summary>Flies every given card image to the discard pile's on-screen position, fading each out as it lands, with a slight stagger so the whole table doesn't leave in one instant jump.</summary>
+    private async Task AnimateCardsToDiscard(List<View> cardViews)
+    {
+        if (cardViews.Count == 0)
+        {
+            return;
+        }
+
+        var discardPosition = GetPositionOnPage(DiscardImage);
+        var animations = new List<Task>(cardViews.Count);
+
+        for (var i = 0; i < cardViews.Count; i++)
+        {
+            animations.Add(AnimateOneCardToDiscard(cardViews[i], discardPosition, startDelayMs: i * CardDiscardStaggerMs));
+        }
+
+        await Task.WhenAll(animations);
+    }
+
+    private static async Task AnimateOneCardToDiscard(View cardView, (double X, double Y) discardPosition, int startDelayMs)
+    {
+        if (startDelayMs > 0)
+        {
+            await Task.Delay(startDelayMs);
+        }
+
+        var cardPosition = GetPositionOnPage(cardView);
+        var targetX = discardPosition.X - cardPosition.X;
+        var targetY = discardPosition.Y - cardPosition.Y;
+
+        await Task.WhenAll(
+            cardView.TranslateToAsync(targetX, targetY, CardDiscardAnimationDurationMs, Easing.CubicIn),
+            cardView.FadeToAsync(0, CardDiscardAnimationDurationMs));
+    }
+
+    /// <summary>
+    /// Reveals the dealer's final hand the way a real dealer plays it out,
+    /// instead of the whole thing just appearing at once: first flips the
+    /// hole card face-up (MAUI has no built-in flip animation, so this is a
+    /// quick redraw rather than an actual card-flip), then - for any
+    /// further cards the dealer's play actually drew past that - animates
+    /// each one flying in from the shoe, one at a time, updating the value
+    /// readout as each lands.
+    /// </summary>
+    private async Task RevealDealerPlay(int dealerCardsBeforePlay)
+    {
+        DealerCardsLayout.Children.Clear();
+        for (var i = 0; i < dealerCardsBeforePlay; i++)
+        {
+            DealerCardsLayout.Children.Add(CreateCardImage(CardImageFile(_dealerHand.Cards[i]), 130));
+        }
+
+        UpdateDealerValueLabel(hideHoleCard: false);
+        await Task.Delay(CardDealStaggerMs);
+
+        for (var i = dealerCardsBeforePlay; i < _dealerHand.Cards.Count; i++)
+        {
+            await DealAnimatedCard(DealerCardsLayout, CardImageFile(_dealerHand.Cards[i]), 130);
+            UpdateDealerValueLabel(hideHoleCard: false);
+            await Task.Delay(CardDealStaggerMs);
         }
     }
 
@@ -1142,6 +1682,18 @@ public partial class MainPage : ContentPage
             DealerCardsLayout.Children.Add(CreateCardImage(imageFile, 130));
         }
 
+        UpdateDealerValueLabel(hideHoleCard);
+    }
+
+    /// <summary>
+    /// Sets the dealer's value readout from current game state. While
+    /// hideHoleCard is true, only the visible upcard's value is shown.
+    /// Factored out so the animated deal-reveal paths (which add the
+    /// dealer's cards one at a time rather than through RenderDealerHand)
+    /// can still update the same label once their reveal finishes.
+    /// </summary>
+    private void UpdateDealerValueLabel(bool hideHoleCard)
+    {
         if (_dealerHand.Cards.Count == 0)
         {
             DealerValueLabel.Text = "";

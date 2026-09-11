@@ -17,6 +17,7 @@ public class PlayerHandSlotTests
             Assert.That(slot.IsFinished, Is.False);
             Assert.That(slot.HasBeenSplit, Is.False);
             Assert.That(slot.ResultText, Is.EqualTo(""));
+            Assert.That(slot.ResolvedEarly, Is.False);
         });
     }
 
@@ -26,6 +27,14 @@ public class PlayerHandSlotTests
         var slot = new PlayerHandSlot { HasBeenSplit = true };
 
         Assert.That(slot.HasBeenSplit, Is.True);
+    }
+
+    [Test]
+    public void ResolvedEarly_CanBeSetAfterConstruction()
+    {
+        var slot = new PlayerHandSlot { ResolvedEarly = true };
+
+        Assert.That(slot.ResolvedEarly, Is.True);
     }
 
     [Test]

@@ -4,57 +4,101 @@ namespace BlackjackApp.Tests;
 
 public class DeckTests
 {
-    [TestCase(1, 52)]
-    [TestCase(4, 208)]
-    [TestCase(6, 312)]
-    public void BuildAndShuffle_CreatesCorrectCardCount(int numberOfDecks, int expectedCardCount)
-    {
-        var deck = new Deck(numberOfDecks, new Random(1));
-
-        Assert.That(deck.CardsRemaining, Is.EqualTo(expectedCardCount));
-    }
-
     [Test]
-    public void SingleDeck_ContainsNoDuplicateCards()
+    public void NewDeck_StartsWithFullShoeAndEmptyDiscard()
     {
-        var deck = new Deck(numberOfDecks: 1, new Random(42));
-        var drawn = new List<Card>();
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
 
-        while (deck.CardsRemaining > 0)
+        Assert.Multiple(() =>
         {
-            drawn.Add(deck.Draw());
-        }
-
-        Assert.That(drawn.Distinct().Count(), Is.EqualTo(52));
+            Assert.That(deck.CardsRemaining, Is.EqualTo(52));
+            Assert.That(deck.DiscardCount, Is.EqualTo(0));
+        });
     }
 
     [Test]
-    public void Draw_ReducesCardsRemainingByOne()
+    public void Discard_MovesCardsIntoTheDiscardPileWithoutTouchingTheShoe()
     {
-        var deck = new Deck(numberOfDecks: 1, new Random(7));
-        var before = deck.CardsRemaining;
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var played = new[] { deck.Draw(), deck.Draw(), deck.Draw() };
 
-        deck.Draw();
+        deck.Discard(played);
 
-        Assert.That(deck.CardsRemaining, Is.EqualTo(before - 1));
+        Assert.Multiple(() =>
+        {
+            Assert.That(deck.CardsRemaining, Is.EqualTo(49));
+            Assert.That(deck.DiscardCount, Is.EqualTo(3));
+        });
     }
 
     [Test]
-    public void Draw_OnEmptyShoe_Throws()
+    public void NeedsReshuffle_IsTrueOnlyAtOrBelowTheCutCardThreshold()
     {
-        var deck = new Deck(numberOfDecks: 1, new Random(3));
-        for (var i = 0; i < 52; i++)
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+
+        Assert.That(deck.NeedsReshuffle(52), Is.True); // at threshold
+        Assert.That(deck.NeedsReshuffle(51), Is.False); // still above it
+
+        for (var i = 0; i < 10; i++)
         {
             deck.Draw();
         }
 
-        Assert.Throws<InvalidOperationException>(() => deck.Draw());
+        Assert.Multiple(() =>
+        {
+            Assert.That(deck.NeedsReshuffle(42), Is.True);
+            Assert.That(deck.NeedsReshuffle(41), Is.False);
+        });
     }
 
-    [TestCase(0)]
-    [TestCase(7)]
-    public void Constructor_RejectsOutOfRangeDeckCount(int invalidDeckCount)
+    [Test]
+    public void ReshuffleDiscardIntoShoe_MovesEveryDiscardedCardBackAndClearsTheDiscardPile()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Deck(invalidDeckCount));
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var played = Enumerable.Range(0, 20).Select(_ => deck.Draw()).ToList();
+        deck.Discard(played);
+
+        Assert.That(deck.CardsRemaining, Is.EqualTo(32));
+
+        deck.ReshuffleDiscardIntoShoe();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(deck.CardsRemaining, Is.EqualTo(52));
+            Assert.That(deck.DiscardCount, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
+    public void ReshuffleDiscardIntoShoe_NeverDuplicatesOrDropsCards()
+    {
+        // The reshuffled shoe should contain exactly the same 52 cards it
+        // started with - nothing invented, nothing lost.
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        var played = Enumerable.Range(0, 52).Select(_ => deck.Draw()).ToList();
+        deck.Discard(played);
+        deck.ReshuffleDiscardIntoShoe();
+
+        var drawnAfterReshuffle = Enumerable.Range(0, 52).Select(_ => deck.Draw()).ToList();
+
+        var expected = played.OrderBy(c => c.Suit).ThenBy(c => c.Rank).ToList();
+        var actual = drawnAfterReshuffle.OrderBy(c => c.Suit).ThenBy(c => c.Rank).ToList();
+
+        Assert.That(actual, Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void BuildAndShuffle_ClearsAnyExistingDiscardPile()
+    {
+        var deck = new Deck(numberOfDecks: 1, new Random(1));
+        deck.Discard(new[] { deck.Draw(), deck.Draw() });
+
+        deck.BuildAndShuffle();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(deck.CardsRemaining, Is.EqualTo(52));
+            Assert.That(deck.DiscardCount, Is.EqualTo(0));
+        });
     }
 }

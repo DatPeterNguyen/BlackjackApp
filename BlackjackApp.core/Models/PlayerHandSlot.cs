@@ -34,4 +34,14 @@ public class PlayerHandSlot
 
     /// <summary>Set once the round resolves - the outcome message for just this hand, shown in its own slot.</summary>
     public string ResultText { get; set; } = "";
+
+    /// <summary>
+    /// True once this hand's payout has already been settled early - a
+    /// natural blackjack pays out the moment it's dealt, rather than
+    /// waiting for every other hand and the dealer's own play to finish,
+    /// as long as the dealer's up card ruled out a dealer blackjack of
+    /// their own. EndRound skips any hand already marked this way instead
+    /// of resolving (and paying) it a second time.
+    /// </summary>
+    public bool ResolvedEarly { get; set; }
 }
