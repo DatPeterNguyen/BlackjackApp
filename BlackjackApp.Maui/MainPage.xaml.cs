@@ -346,6 +346,46 @@ public partial class MainPage : ContentPage
             _handSlotViews[i].Border.Stroke = isHighlighted ? Color.FromArgb("#FFD700") : Color.FromArgb("#8FBFA9");
             _handSlotViews[i].Border.StrokeThickness = isHighlighted ? 3 : 1;
         }
+
+        RefreshActionButtonVisibility();
+    }
+
+    /// <summary>
+    /// Shows only the Hit/Stand/Double/Split buttons the hand currently up
+    /// can actually use right now, instead of showing all four all the time
+    /// and letting a tap on an invalid one just print an error message -
+    /// hidden entirely (not just grayed out) so the row itself always shows
+    /// what's legal. Stand is the one exception: it's always offered for
+    /// whichever hand is actively being played, since you can always choose
+    /// to stop.
+    /// </summary>
+    private void RefreshActionButtonVisibility()
+    {
+        if (!_roundInProgress || _activeHandIndex < 0 || _pendingWarDecisionHandIndex >= 0)
+        {
+            // No hand is actively being played right now - either still
+            // betting, between rounds, or in the middle of a War
+            // Press/Cash-Out decision, which has its own dedicated buttons.
+            HitButton.IsVisible = false;
+            StandButton.IsVisible = false;
+            DoubleButton.IsVisible = false;
+            SplitButton.IsVisible = false;
+            return;
+        }
+
+        var slot = _hands[_activeHandIndex];
+
+        HitButton.IsVisible = _variant.CanHit(slot.Hand);
+        StandButton.IsVisible = true;
+
+        var doubledBet = slot.Bet * 2;
+        DoubleButton.IsVisible = _variant.CanDoubleDown(slot.Hand)
+            && ChipWallet.IsWithinTableLimits(doubledBet)
+            && _wallet.Balance >= slot.Bet;
+
+        SplitButton.IsVisible = !slot.HasBeenSplit
+            && _variant.CanSplit(slot.Hand)
+            && _wallet.Balance >= slot.Bet;
     }
 
     private async void ChipButton_OnClicked(object? sender, EventArgs e)
@@ -630,11 +670,10 @@ public partial class MainPage : ContentPage
         if (_variant is WarBlackjackVariant warVariant)
         {
             // Nothing to act on yet - the War card(s) have to be dealt and
-            // any winning War bets decided before real blackjack play starts.
-            HitButton.IsEnabled = false;
-            StandButton.IsEnabled = false;
-            DoubleButton.IsEnabled = false;
-            SplitButton.IsEnabled = false;
+            // any winning War bets decided before real blackjack play
+            // starts. They're already hidden (RefreshActionButtonVisibility
+            // only shows them once there's an active hand to use them on),
+            // so there's nothing further to hide here.
             await StartWarPhase(warVariant);
         }
         else
@@ -768,6 +807,20 @@ public partial class MainPage : ContentPage
 
                 var view = _handSlotViews[i];
                 await DealAnimatedCard(view.CardsLayout, CardImageFile(slot.Hand.Cards[round]), HandSlotCardHeight);
+
+                // As soon as THIS hand's own cards are all down, show its
+                // value - and, if it was already cashed out as an immediate
+                // blackjack (see TryPayEarlyBlackjack), its result text -
+                // right away. Don't make a hand's own payout confirmation
+                // wait on every other hand and the dealer finishing their
+                // deal too; that's what made an instant blackjack look like
+                // nothing had happened yet.
+                if (round == slot.Hand.Cards.Count - 1)
+                {
+                    view.ValueLabel.Text = $"Value: {slot.Hand.GetBestValue().Value}";
+                    view.ResultLabel.Text = slot.ResultText;
+                }
+
                 await Task.Delay(CardDealStaggerMs);
             }
 
@@ -778,17 +831,6 @@ public partial class MainPage : ContentPage
                 await DealAnimatedCard(DealerCardsLayout, imageFile, 130);
                 await Task.Delay(CardDealStaggerMs);
             }
-        }
-
-        // Every card is now on the table - fill in the value/result labels
-        // once at the end, rather than reading a hand's final value off of
-        // it before every one of its cards has actually been revealed.
-        for (var i = 0; i < _hands.Count; i++)
-        {
-            var slot = _hands[i];
-            var view = _handSlotViews[i];
-            view.ValueLabel.Text = slot.Hand.Cards.Count > 0 ? $"Value: {slot.Hand.GetBestValue().Value}" : "";
-            view.ResultLabel.Text = slot.ResultText;
         }
 
         UpdateDealerValueLabel(hideDealerHoleCard);
@@ -1076,6 +1118,11 @@ public partial class MainPage : ContentPage
         _variant.Hit(_deck, slot.Hand);
         UpdateShoeDisplay();
         await RevealNewCardInHand(_activeHandIndex);
+
+        // The hand's own card count just changed (e.g. Double is no longer
+        // legal after a third card) even if the turn itself doesn't
+        // advance, so button visibility needs a refresh regardless.
+        RefreshActionButtonVisibility();
         await ContinueOrAdvance(cameFromDouble: false);
     }
 
@@ -1131,6 +1178,7 @@ public partial class MainPage : ContentPage
         _variant.Hit(_deck, slot.Hand);
         UpdateShoeDisplay();
         await RevealNewCardInHand(_activeHandIndex);
+        RefreshActionButtonVisibility();
         await ContinueOrAdvance(cameFromDouble: true);
     }
 
@@ -1744,14 +1792,19 @@ public partial class MainPage : ContentPage
 
     private void UpdateTotalWageredText() => CurrentBetLabel.Text = $"Total Wagered: ${_hands.Sum(h => h.Bet + h.WarBet):N0}";
 
+    /// <summary>
+    /// Deal and the whole chip/Clear/All-In row only make sense before a
+    /// round starts - rather than graying them out mid-round (same as
+    /// Hit/Stand/Double/Split used to be), they're hidden entirely, so the
+    /// screen only ever shows buttons that currently do something. Their
+    /// actual usability once visible again is handled elsewhere (Deal's own
+    /// bet-validation messages; RefreshActionButtonVisibility for the four
+    /// action buttons).
+    /// </summary>
     private void SetRoundInProgress(bool roundInProgress)
     {
-        DealButton.IsEnabled = !roundInProgress;
-        HitButton.IsEnabled = roundInProgress;
-        StandButton.IsEnabled = roundInProgress;
-        DoubleButton.IsEnabled = roundInProgress;
-        SplitButton.IsEnabled = roundInProgress;
-        ChipButtonsLayout.IsEnabled = !roundInProgress;
+        DealButton.IsVisible = !roundInProgress;
+        ChipButtonsLayout.IsVisible = !roundInProgress;
     }
 
     private void UpdateBalanceText() => BalanceLabel.Text = $"Balance: ${_wallet.Balance:N0}";

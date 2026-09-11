@@ -116,10 +116,11 @@
             <ScrollView Grid.Row="6" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout Spacing="4" HorizontalOptions="Center">
                     <Button x:Name="DealButton" Text="Deal" WidthRequest="90" HeightRequest="44" Margin="2" FontAttributes="Bold" Clicked="DealButton_OnClicked"/>
-                    <Button x:Name="HitButton" Text="Hit" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="HitButton_OnClicked"/>
-                    <Button x:Name="StandButton" Text="Stand" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="StandButton_OnClicked"/>
-                    <Button x:Name="DoubleButton" Text="Double" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="DoubleButton_OnClicked"/>
-                    <Button x:Name="SplitButton" Text="Split" WidthRequest="90" HeightRequest="44" Margin="2" IsEnabled="False" Clicked="SplitButton_OnClicked"/>
+                    <!-- No IsEnabled="False" here - RefreshActionButtonVisibility (code-behind) is the sole gatekeeper now, hiding each one entirely via IsVisible rather than graying it out, so it also needs to start out enabled. -->
+                    <Button x:Name="HitButton" Text="Hit" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="HitButton_OnClicked"/>
+                    <Button x:Name="StandButton" Text="Stand" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="StandButton_OnClicked"/>
+                    <Button x:Name="DoubleButton" Text="Double" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="DoubleButton_OnClicked"/>
+                    <Button x:Name="SplitButton" Text="Split" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="SplitButton_OnClicked"/>
                     <!-- War Blackjack only - shown after a hand's War card beats the dealer's, replacing the normal action buttons for that moment. -->
                     <Button x:Name="PressWarButton" Text="Press" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="PressWarButton_OnClicked"/>
                     <Button x:Name="CashOutWarButton" Text="Cash Out" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="CashOutWarButton_OnClicked"/>
