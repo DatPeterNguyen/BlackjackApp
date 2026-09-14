@@ -98,6 +98,9 @@ public partial class MainPage : ContentPage
     /// <summary>War Blackjack only: the hand a Press/Cash Out tap currently applies to; -1 when no War decision is pending.</summary>
     private int _pendingWarDecisionHandIndex = -1;
 
+    /// <summary>War Blackjack only: true if any hand actually won the War this round (i.e. got a Press/Cash-Out decision) - set fresh in StartWarPhase, read by AdvanceWarDecisionQueue to decide whether the table pauses (see WarResultPauseBeforeSecondCards) before dealing the second cards.</summary>
+    private bool _anyHandWonWarThisRound;
+
     /// <summary>
     /// War Blackjack only: the wallet balance right before this round's
     /// bets were deducted. WarTotalLabel is always just (current balance -
@@ -165,6 +168,9 @@ public partial class MainPage : ContentPage
 
     /// <summary>How long a hand's chip image takes to fade in when a bet is placed on it.</summary>
     private const uint ChipPlacedAnimationDurationMs = 180;
+
+    /// <summary>War Blackjack only: how long to hold on a hand's War result (won/lost) before dealing the second cards and moving into real blackjack play - see AdvanceWarDecisionQueue/_anyHandWonWarThisRound. Gives a winning Press/Cash-Out tap's result text a beat to actually be read instead of the next cards immediately flying in on top of it.</summary>
+    private static readonly TimeSpan WarResultPauseBeforeSecondCards = TimeSpan.FromSeconds(2);
 
     /// <summary>Parameterless overload kept for anything that still expects a default-constructible page (e.g. design-time tooling) - matches the field initializers' own defaults (Standard Blackjack, 4 decks, 1 hand).</summary>
     public MainPage() : this(new StandardBlackjackVariant(), 4, 1)
@@ -1501,6 +1507,7 @@ public partial class MainPage : ContentPage
         await RevealOpeningDeal(hideDealerHoleCard: false);
 
         _warDecisionQueue.Clear();
+        _anyHandWonWarThisRound = false;
 
         // Same rightmost-hand-first order as the deal and blackjack turn
         // order, so Press/Cash-Out decisions are asked in the same order
@@ -1517,6 +1524,7 @@ public partial class MainPage : ContentPage
             if (warVariant.PlayerWinsWar(slot.Hand, _dealerHand))
             {
                 _warDecisionQueue.Enqueue(i);
+                _anyHandWonWarThisRound = true;
             }
             else
             {
@@ -1546,6 +1554,19 @@ public partial class MainPage : ContentPage
             _pendingWarDecisionHandIndex = -1;
             PressWarButton.IsVisible = false;
             CashOutWarButton.IsVisible = false;
+
+            // Give a winning hand's just-made Press/Cash-Out choice (or, on
+            // a single-hand table, the "War: won ..." result text itself) a
+            // moment to actually be seen before its second card comes flying
+            // in right on top of it. Nothing worth pausing for if no hand
+            // won the War this round - a straight loss's result text was
+            // already visible for the length of RevealOpeningDeal's own
+            // staggered animation.
+            if (_anyHandWonWarThisRound)
+            {
+                await Task.Delay(WarResultPauseBeforeSecondCards);
+            }
+
             ResultLabel.Text = "";
             await DealOpeningSecondCardsAndStartPlay();
             return;
@@ -1584,6 +1605,12 @@ public partial class MainPage : ContentPage
         UpdateTotalWageredText();
         RenderHandSlot(_pendingWarDecisionHandIndex);
 
+        // Replaces the now-stale "Press it into your bet, or cash out?"
+        // prompt with what was actually chosen, so that's what's still on
+        // screen during AdvanceWarDecisionQueue's pause before the second
+        // cards come out (see WarResultPauseBeforeSecondCards).
+        ResultLabel.Text = slot.ResultText;
+
         await AdvanceWarDecisionQueue();
         PersistInProgressRound();
     }
@@ -1606,6 +1633,11 @@ public partial class MainPage : ContentPage
         // combined result once EndRound resolves the whole round.
         UpdateBalanceText();
         RenderHandSlot(_pendingWarDecisionHandIndex);
+
+        // See the matching note in PressWarButton_OnClicked - replaces the
+        // stale prompt with the actual outcome for AdvanceWarDecisionQueue's
+        // pause to show.
+        ResultLabel.Text = slot.ResultText;
 
         await AdvanceWarDecisionQueue();
         PersistInProgressRound();
