@@ -29,25 +29,33 @@ jobs:
     # 10x the CI minutes of a Linux runner - the path filters above keep
     # this from firing on every unrelated commit.
     #
-    # Pinned to xcode-27 (public preview, arm64-only) rather than macos-15
-    # or macos-26: this project's .NET for iOS workload (26.5.10318) needs
-    # Xcode 26.6, and as of writing even macos-26 - GitHub's newest GA
-    # image - only bundles up to Xcode 26.5. xcode-27 is the first
-    # GitHub-hosted image that clears that bar. Being a preview image, it
-    # could change under us; if this label stops working, check
-    # https://github.com/actions/runner-images for what's GA and bundles
-    # Xcode >= 26.6 by then, or pin the workload down instead (see
-    # https://aka.ms/xcode-requirement).
-    runs-on: xcode-27
+    # This project's .NET for iOS workload (26.5.10318) needs EXACTLY
+    # Xcode 26.6 - not "at least", older or newer both fail the same way,
+    # and Microsoft doesn't provide an MSBuild property to relax that
+    # check (see https://aka.ms/xcode-requirement). xcode-27 only bundles
+    # Xcode 27.0 beta, which is too new; macos-26 bundles Xcode 26.6
+    # directly (as its default, in fact) alongside several older ones, so
+    # that's the one to use. If a future dotnet workload update bumps the
+    # required Xcode version, the "Select Xcode 26.6" step below is the
+    # one to update alongside it.
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select latest available Xcode
+      - name: Select Xcode 26.6
+        # Exact version, not "latest" - see the runs-on comment above for
+        # why. Fails loudly and lists what IS on the runner if 26.6 isn't
+        # there, rather than silently falling back to some other version
+        # that would just fail later with a more confusing MSBuild error.
         run: |
-          LATEST_XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
-          echo "Using $LATEST_XCODE"
-          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
+          REQUIRED_XCODE="/Applications/Xcode_26.6.app"
+          if [ ! -d "$REQUIRED_XCODE" ]; then
+            echo "::error::$REQUIRED_XCODE not found on this runner. Available Xcode installs:" >&2
+            ls -d /Applications/Xcode*.app 2>/dev/null >&2
+            exit 1
+          fi
+          sudo xcode-select -s "$REQUIRED_XCODE/Contents/Developer"
           xcodebuild -version
 
       - name: Setup .NET
