@@ -100,51 +100,64 @@
 
             <!--
                 Row 5: Chip tray - horizontally scrollable so it fits on a
-                phone width. Betting is drag-and-drop: press and drag a chip
-                image down onto the hand slot (Row 2) you want to bet with,
-                and dropping it there adds that denomination to that hand's
-                bet - see MainPage.xaml.cs ChipDrag_DragStarting (drag
-                source) and the DropGestureRecognizer wired onto each hand
-                slot's Border in CreateHandSlotView (drop target). Each
-                Image's ClassId carries its dollar denomination, since Image
-                has no CommandParameter. Clear/All In stay as ordinary tap
-                buttons - they aren't chips, so dragging doesn't apply.
+                phone width. Betting supports two interactions side by side:
+                drag-and-drop (press and drag a chip image down onto the
+                hand slot in Row 2 you want to bet with - see
+                MainPage.xaml.cs ChipDrag_DragStarting for the drag source
+                and the DropGestureRecognizer wired onto each hand slot's
+                Border in CreateHandSlotView for the drop target), and
+                tap-to-bet (tap a chip to "hold" it - see ChipImage_OnTapped
+                - then tap a hand slot to place it there; added as a
+                universal fallback since drag gestures can be unreliable in
+                some environments, e.g. the iOS Simulator). Both paths route
+                through the same PlaceChipOnHandAsync so they stay
+                consistent. Each Image's ClassId carries its dollar
+                denomination, since Image has no CommandParameter. Clear/All
+                In stay as ordinary tap buttons - they aren't chips, so
+                dragging doesn't apply.
             -->
             <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout x:Name="ChipButtonsLayout" Spacing="10" HorizontalOptions="Center">
                     <Image Source="chip_1.png" ClassId="1" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
                             <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_5.png" ClassId="5" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
                             <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_10.png" ClassId="10" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
                             <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_25.png" ClassId="25" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
                             <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_100.png" ClassId="100" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
                             <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_1000.png" ClassId="1000" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
                             <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_10000.png" ClassId="10000" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
                             <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Button x:Name="ClearBetButton" Text="Clear" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="12,2,2,2" Clicked="ClearBetButton_OnClicked"/>

@@ -64,6 +64,18 @@ public partial class MainPage : ContentPage
     /// <summary>Which hand slot chip taps/Clear currently target, before a round starts.</summary>
     private int _selectedBetIndex;
 
+    /// <summary>
+    /// The chip denomination currently "held" via tap-to-bet (null when
+    /// none is held) - the universal fallback for drag-and-drop betting
+    /// (see ChipImage_OnTapped, PlaceChipOnHandAsync, and the tap handler
+    /// wired up in CreateHandSlotView). Tapping a chip toggles it held or
+    /// not; tapping a hand slot while one is held places it there and
+    /// leaves it held, so the same chip can be placed on several hands in a
+    /// row without re-tapping the tray each time. Cleared whenever a new
+    /// round is dealt.
+    /// </summary>
+    private decimal? _heldChipDenomination;
+
     /// <summary>Which hand slot Hit/Stand/Double currently apply to; -1 when no round is in progress.</summary>
     private int _activeHandIndex = -1;
 
@@ -273,7 +285,21 @@ public partial class MainPage : ContentPage
         };
 
         var tap = new TapGestureRecognizer();
-        tap.Tapped += (_, _) => SelectHandForBetting(handIndex);
+        tap.Tapped += (_, _) =>
+        {
+            // Tap-to-bet fallback: if a chip is currently held (see
+            // ChipImage_OnTapped), tapping a hand slot places it there
+            // instead of just selecting the hand as the betting target -
+            // mirrors what dropping that chip on this slot would do.
+            if (_heldChipDenomination is { } heldDenomination)
+            {
+                _ = PlaceChipOnHandAsync(handIndex, heldDenomination);
+            }
+            else
+            {
+                SelectHandForBetting(handIndex);
+            }
+        };
         border.GestureRecognizers.Add(tap);
 
         // Drop target for a dragged chip (see ChipDrag_DragStarting on the
@@ -441,19 +467,32 @@ public partial class MainPage : ContentPage
 
     /// <summary>
     /// A chip was dropped onto handIndex's slot - the drag-and-drop
-    /// replacement for the old numbered chip buttons, adding the dropped
-    /// chip's denomination straight to that specific hand's bet (or its War
-    /// bet, if that's the current betting target) rather than requiring the
-    /// hand to be tapped-and-selected first.
+    /// replacement for the old numbered chip buttons. Reads the dropped
+    /// chip's denomination out of the drag payload and hands off to
+    /// PlaceChipOnHandAsync, which both this and the tap-to-bet fallback
+    /// (see ChipImage_OnTapped) funnel through so the two interactions stay
+    /// perfectly consistent.
     /// </summary>
     private async void HandleChipDrop(int handIndex, DropEventArgs e)
     {
-        if (_roundInProgress)
+        if (!e.Data.Properties.TryGetValue("Denomination", out var raw) || raw is not decimal chipValue)
         {
             return;
         }
 
-        if (!e.Data.Properties.TryGetValue("Denomination", out var raw) || raw is not decimal chipValue)
+        await PlaceChipOnHandAsync(handIndex, chipValue);
+    }
+
+    /// <summary>
+    /// Adds chipValue to handIndex's bet (or its War bet, if that's the
+    /// current betting target), clamped to the table maximum. Shared by
+    /// both chip-betting interactions - drag-and-drop (HandleChipDrop) and
+    /// tap-to-bet (the hand-slot tap handler wired up in
+    /// CreateHandSlotView) - so a chip placed either way behaves identically.
+    /// </summary>
+    private async Task PlaceChipOnHandAsync(int handIndex, decimal chipValue)
+    {
+        if (_roundInProgress)
         {
             return;
         }
@@ -475,7 +514,7 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        // Clamp rather than reject outright, so dropping a big chip near the
+        // Clamp rather than reject outright, so placing a big chip near the
         // cap still places as much of it as the table allows.
         var room = ChipWallet.RemainingRoomUnderMax(currentAmount);
         var amountToAdd = (int)Math.Min(chipValue, room);
@@ -496,11 +535,50 @@ public partial class MainPage : ContentPage
             : "";
 
         // The chip image only ever reflects the main bet (there's no
-        // separate War-bet chip graphic), so only fade it in when a drop
+        // separate War-bet chip graphic), so only fade it in when this
         // actually changed it.
         if (!targetingWarBet)
         {
             await AnimateChipPlaced(handIndex);
+        }
+    }
+
+    /// <summary>
+    /// Tap-to-bet fallback for the chip tray (Row 5) - a universal
+    /// alternative to drag-and-drop betting, added because drag gestures
+    /// can be unreliable in some environments (e.g. the iOS Simulator).
+    /// Tapping a chip "holds" it (tapping the same chip again releases it);
+    /// while a chip is held, tapping any hand slot places it there via
+    /// PlaceChipOnHandAsync - see the tap handler wired up in
+    /// CreateHandSlotView.
+    /// </summary>
+    private void ChipImage_OnTapped(object? sender, TappedEventArgs e)
+    {
+        if (_roundInProgress)
+        {
+            return;
+        }
+
+        if (sender is not Image { ClassId: { } denominationTag } || !decimal.TryParse(denominationTag, out var denomination))
+        {
+            return;
+        }
+
+        _heldChipDenomination = _heldChipDenomination == denomination ? null : denomination;
+        RefreshHeldChipHighlight();
+    }
+
+    /// <summary>Visually marks whichever chip in the tray is currently held (see ChipImage_OnTapped), so it's obvious a tap-to-bet is armed and waiting for a hand slot.</summary>
+    private void RefreshHeldChipHighlight()
+    {
+        foreach (var chipImage in ChipButtonsLayout.Children.OfType<Image>())
+        {
+            var isHeld = chipImage.ClassId is { } tag
+                && decimal.TryParse(tag, out var denomination)
+                && denomination == _heldChipDenomination;
+
+            chipImage.Scale = isHeld ? 1.15 : 1.0;
+            chipImage.Opacity = isHeld ? 1.0 : 0.85;
         }
     }
 
@@ -681,6 +759,11 @@ public partial class MainPage : ContentPage
         // round's own cards are on it.
         _autoDiscardCts?.Cancel();
         _roundGeneration++;
+
+        // A held tap-to-bet chip (see ChipImage_OnTapped) only makes sense
+        // while still betting - release it now that the round is starting.
+        _heldChipDenomination = null;
+        RefreshHeldChipHighlight();
 
         // Move the previous round's cards into the discard pile instead of
         // silently vanishing them, then only reshuffle the shoe once it's
