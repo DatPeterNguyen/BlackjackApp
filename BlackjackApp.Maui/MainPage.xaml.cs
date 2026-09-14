@@ -98,7 +98,10 @@ public partial class MainPage : ContentPage
     /// <summary>War Blackjack only: the hand a Press/Cash Out tap currently applies to; -1 when no War decision is pending.</summary>
     private int _pendingWarDecisionHandIndex = -1;
 
-    /// <summary>War Blackjack only: true if any hand actually won the War this round (i.e. got a Press/Cash-Out decision) - set fresh in StartWarPhase, read by AdvanceWarDecisionQueue to decide whether the table pauses (see WarResultPauseBeforeSecondCards) before dealing the second cards.</summary>
+    /// <summary>War Blackjack only: true if any hand actually placed a War bet this round (whether it went on to win or lose) - set fresh in StartWarPhase, read by AdvanceWarDecisionQueue to decide whether the table pauses (see WarResultPauseBeforeSecondCards) before dealing the second cards. A round nobody bet War on has no War result worth pausing for.</summary>
+    private bool _anyHandBetWarThisRound;
+
+    /// <summary>War Blackjack only: true if any hand actually won the War this round (i.e. got a Press/Cash-Out decision) - set fresh in StartWarPhase alongside _anyHandBetWarThisRound, used only to pick the right message to hold on screen during that pause (a win's own Press/Cash-Out result vs. a plain "Lost the War" summary when every War bet lost).</summary>
     private bool _anyHandWonWarThisRound;
 
     /// <summary>
@@ -1507,6 +1510,7 @@ public partial class MainPage : ContentPage
         await RevealOpeningDeal(hideDealerHoleCard: false);
 
         _warDecisionQueue.Clear();
+        _anyHandBetWarThisRound = false;
         _anyHandWonWarThisRound = false;
 
         // Same rightmost-hand-first order as the deal and blackjack turn
@@ -1521,6 +1525,8 @@ public partial class MainPage : ContentPage
                 continue;
             }
 
+            _anyHandBetWarThisRound = true;
+
             if (warVariant.PlayerWinsWar(slot.Hand, _dealerHand))
             {
                 _warDecisionQueue.Enqueue(i);
@@ -1534,6 +1540,18 @@ public partial class MainPage : ContentPage
                 slot.ResultText = $"War: lost ${slot.WarBet:N0}. ";
                 RenderHandSlot(i);
             }
+        }
+
+        // If every War bet this round lost outright, nothing queues a
+        // Press/Cash-Out prompt to put on the shared ResultLabel - without
+        // this, the table would sit there with that label still blank
+        // through the whole pause below, looking like nothing happened.
+        // Each hand's own small result label already shows its exact loss
+        // amount (see the loop above), so this just needs to be the one
+        // headline "something happened here" message.
+        if (_anyHandBetWarThisRound && !_anyHandWonWarThisRound)
+        {
+            ResultLabel.Text = "Lost the War.";
         }
 
         // The Total display intentionally doesn't refresh here (or anywhere
@@ -1555,14 +1573,12 @@ public partial class MainPage : ContentPage
             PressWarButton.IsVisible = false;
             CashOutWarButton.IsVisible = false;
 
-            // Give a winning hand's just-made Press/Cash-Out choice (or, on
-            // a single-hand table, the "War: won ..." result text itself) a
-            // moment to actually be seen before its second card comes flying
-            // in right on top of it. Nothing worth pausing for if no hand
-            // won the War this round - a straight loss's result text was
-            // already visible for the length of RevealOpeningDeal's own
-            // staggered animation.
-            if (_anyHandWonWarThisRound)
+            // Give the War result - a winning hand's Press/Cash-Out choice,
+            // or the "Lost the War." summary set above when every War bet
+            // lost - a moment to actually be read before the second cards
+            // come flying in right on top of it. Nothing worth pausing for
+            // if nobody bet War at all this round; there's no result to see.
+            if (_anyHandBetWarThisRound)
             {
                 await Task.Delay(WarResultPauseBeforeSecondCards);
             }
