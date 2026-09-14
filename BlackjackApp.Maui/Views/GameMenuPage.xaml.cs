@@ -211,12 +211,36 @@ public partial class GameMenuPage : ContentPage
     /// </summary>
     private async void PlayButton_OnClicked(object? sender, EventArgs e)
     {
+        // Starting a fresh game abandons any saved in-progress round outright
+        // (StartGameWith below clears it) - warn first, since that round's
+        // wallet balance reflects money already committed to bets that would
+        // otherwise just vanish silently. Nothing to warn about if there's no
+        // save to lose.
+        if (GameProgressStorage.HasInProgressRound())
+        {
+            var confirmed = await DisplayAlert(
+                "Start a New Game?",
+                "You have a saved game in progress. Starting a new one abandons it - any money on the table there will be lost. Use Load Game instead if you want to finish it first.",
+                "Start New Game",
+                "Cancel");
+
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
         await Navigation.PushModalAsync(new RulesPage(_currentVariant.Name, StartGameWith));
     }
 
     /// <summary>Called when RulesPage's Play button confirms a mode selection (start menu only) - closes Rules and launches a fresh game with that variant.</summary>
     private async Task StartGameWith(IGameVariant variant)
     {
+        // Committing to the new game now - drop the old save (see the
+        // warning in PlayButton_OnClicked) so it doesn't linger as a stale
+        // Load Game entry for a round that's being replaced.
+        GameProgressStorage.ClearInProgressRound();
+
         _currentVariant = variant;
         RefreshVariantSummary();
 
