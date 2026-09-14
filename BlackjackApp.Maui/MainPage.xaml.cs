@@ -76,6 +76,15 @@ public partial class MainPage : ContentPage
     /// </summary>
     private decimal? _heldChipDenomination;
 
+    /// <summary>True for the duration of a custom chip drag gesture (see ChipImage_OnPanUpdated) - from the finger going down on a chip to it lifting back up.</summary>
+    private bool _isDraggingChip;
+
+    /// <summary>The dragged chip's absolute starting position (in RootLayout's coordinate space) for this drag - the drag ghost's translation is always this origin plus the gesture's running total delta, and it's also where the ghost glides back to on a miss.</summary>
+    private Point _dragGhostOrigin;
+
+    /// <summary>Which hand slot the drag ghost is currently hovering over, or -1 for none - set by UpdateDragHoverHighlight, read by ChipImage_OnPanUpdated on release to decide where the chip lands.</summary>
+    private int _dragHoverHandIndex = -1;
+
     /// <summary>Which hand slot Hit/Stand/Double currently apply to; -1 when no round is in progress.</summary>
     private int _activeHandIndex = -1;
 
@@ -302,20 +311,11 @@ public partial class MainPage : ContentPage
         };
         border.GestureRecognizers.Add(tap);
 
-        // Drop target for a dragged chip (see ChipDrag_DragStarting on the
-        // Row 5 chip tray, and HandleChipDrop) - highlights the slot while a
-        // chip is hovering over it so a drop target is obvious, then hands
-        // off to the normal highlight rules once the drag leaves or lands.
-        var drop = new DropGestureRecognizer { AllowDrop = true };
-        drop.DragOver += (_, dragOverArgs) =>
-        {
-            dragOverArgs.AcceptedOperation = DataPackageOperation.Copy;
-            border.Stroke = Color.FromArgb("#7FB3FF");
-            border.StrokeThickness = 3;
-        };
-        drop.DragLeave += (_, _) => RefreshHandSlotHighlights();
-        drop.Drop += (_, dropArgs) => HandleChipDrop(handIndex, dropArgs);
-        border.GestureRecognizers.Add(drop);
+        // No DropGestureRecognizer here anymore - the chip tray no longer
+        // uses OS drag-and-drop at all (see ChipImage_OnPanUpdated). Hover
+        // highlighting while a chip is being dragged over this slot is done
+        // manually, by UpdateDragHoverHighlight hit-testing this Border's
+        // own absolute bounds against the drag ghost's current position.
 
         var view = new HandSlotView
         {
@@ -451,44 +451,194 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// A chip in the tray (Row 5) is being dragged - stashes its dollar
-    /// denomination (carried on the Image's ClassId, since Image has no
-    /// CommandParameter) into the drag payload so whichever hand slot it's
-    /// dropped on (see the DropGestureRecognizer wired up in
-    /// CreateHandSlotView, and HandleChipDrop) knows what was dropped.
+    /// Drives the smooth custom chip drag - a chip in the tray (Row 5) is
+    /// pressed and dragged, and a free-floating "ghost" copy of it
+    /// (DragGhostImage, living outside every ScrollView at the page's root
+    /// - see MainPage.xaml) follows the finger 1:1 for the whole gesture,
+    /// rather than relying on the OS's own drag-and-drop chrome (which felt
+    /// like dragging a file, and was unreliable on iOS - see PlayerHandSlot
+    /// and the tap-to-bet fallback added earlier for that same reason).
+    /// The chip itself stays put in the tray the whole time; only the ghost
+    /// moves, and it's the ghost's final position that gets hit-tested
+    /// against the hand slots to decide where (if anywhere) the chip lands.
     /// </summary>
-    private void ChipDrag_DragStarting(object? sender, DragStartingEventArgs e)
+    private async void ChipImage_OnPanUpdated(object? sender, PanUpdatedEventArgs e)
     {
-        if (sender is Image { ClassId: { } denominationTag } && decimal.TryParse(denominationTag, out var denomination))
-        {
-            e.Data.Properties["Denomination"] = denomination;
-        }
-    }
-
-    /// <summary>
-    /// A chip was dropped onto handIndex's slot - the drag-and-drop
-    /// replacement for the old numbered chip buttons. Reads the dropped
-    /// chip's denomination out of the drag payload and hands off to
-    /// PlaceChipOnHandAsync, which both this and the tap-to-bet fallback
-    /// (see ChipImage_OnTapped) funnel through so the two interactions stay
-    /// perfectly consistent.
-    /// </summary>
-    private async void HandleChipDrop(int handIndex, DropEventArgs e)
-    {
-        if (!e.Data.Properties.TryGetValue("Denomination", out var raw) || raw is not decimal chipValue)
+        if (sender is not Image { ClassId: { } denominationTag } chipImage || !decimal.TryParse(denominationTag, out var denomination))
         {
             return;
         }
 
-        await PlaceChipOnHandAsync(handIndex, chipValue);
+        switch (e.StatusType)
+        {
+            case GestureStatus.Started:
+                if (_roundInProgress)
+                {
+                    return;
+                }
+
+                _isDraggingChip = true;
+                _dragGhostOrigin = GetAbsolutePosition(chipImage, RootLayout);
+                _dragHoverHandIndex = -1;
+
+                DragGhostImage.Source = chipImage.Source;
+                DragGhostImage.TranslationX = _dragGhostOrigin.X;
+                DragGhostImage.TranslationY = _dragGhostOrigin.Y;
+                DragGhostImage.Scale = 1.15;
+                DragGhostImage.Opacity = 1;
+                DragGhostImage.IsVisible = true;
+
+                // The chip stays visible in the tray at reduced opacity -
+                // the ghost is what visually reads as "picked up".
+                chipImage.Opacity = 0.35;
+                break;
+
+            case GestureStatus.Running:
+                if (!_isDraggingChip)
+                {
+                    return;
+                }
+
+                DragGhostImage.TranslationX = _dragGhostOrigin.X + e.TotalX;
+                DragGhostImage.TranslationY = _dragGhostOrigin.Y + e.TotalY;
+                UpdateDragHoverHighlight();
+                break;
+
+            case GestureStatus.Completed:
+                if (!_isDraggingChip)
+                {
+                    return;
+                }
+
+                _isDraggingChip = false;
+                chipImage.Opacity = 1;
+
+                var targetHandIndex = _dragHoverHandIndex;
+                _dragHoverHandIndex = -1;
+                RefreshHandSlotHighlights();
+
+                if (targetHandIndex >= 0)
+                {
+                    await PlaceChipOnHandAsync(targetHandIndex, denomination);
+                    await HideDragGhostAsync();
+                }
+                else
+                {
+                    await ReturnDragGhostHomeAsync();
+                }
+                break;
+
+            case GestureStatus.Canceled:
+                _isDraggingChip = false;
+                chipImage.Opacity = 1;
+                _dragHoverHandIndex = -1;
+                RefreshHandSlotHighlights();
+                await ReturnDragGhostHomeAsync();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// While a chip drag is in progress, highlights whichever hand slot (if
+    /// any) the drag ghost's current center point is over - the custom-drag
+    /// equivalent of the old DropGestureRecognizer's DragOver highlight.
+    /// Updates _dragHoverHandIndex, which ChipImage_OnPanUpdated reads back
+    /// on release to decide where the chip lands.
+    /// </summary>
+    private void UpdateDragHoverHighlight()
+    {
+        // DragGhostImage.Width/Height can read as -1 (unmeasured) right
+        // after IsVisible flips true, before the next layout pass - so use
+        // its known fixed WidthRequest/HeightRequest (see MainPage.xaml)
+        // rather than the live Width/Height for this center calculation.
+        const double dragGhostSize = 56;
+        var ghostCenter = new Point(
+            DragGhostImage.TranslationX + dragGhostSize / 2,
+            DragGhostImage.TranslationY + dragGhostSize / 2);
+
+        var newHoverIndex = -1;
+        for (var i = 0; i < _handSlotViews.Count; i++)
+        {
+            var border = _handSlotViews[i].Border;
+            var bounds = new Rect(GetAbsolutePosition(border, RootLayout), border.Bounds.Size);
+            if (bounds.Contains(ghostCenter))
+            {
+                newHoverIndex = i;
+                break;
+            }
+        }
+
+        if (newHoverIndex == _dragHoverHandIndex)
+        {
+            return;
+        }
+
+        _dragHoverHandIndex = newHoverIndex;
+
+        for (var i = 0; i < _handSlotViews.Count; i++)
+        {
+            var isHovered = i == _dragHoverHandIndex;
+            _handSlotViews[i].Border.Stroke = isHovered ? Color.FromArgb("#7FB3FF") : Color.FromArgb("#8FBFA9");
+            _handSlotViews[i].Border.StrokeThickness = isHovered ? 3 : 1;
+        }
+    }
+
+    /// <summary>Fades the drag ghost out and resets it, once a drag has resolved (whether the chip landed on a hand or the drag missed and snapped back).</summary>
+    private async Task HideDragGhostAsync()
+    {
+        await DragGhostImage.FadeToAsync(0, 120);
+        DragGhostImage.IsVisible = false;
+        DragGhostImage.Opacity = 0;
+        DragGhostImage.Scale = 1;
+    }
+
+    /// <summary>No hand slot was under the release point - glides the ghost smoothly back to where the chip started, then clears it, so a drag that misses reads as "put back down" rather than just vanishing.</summary>
+    private async Task ReturnDragGhostHomeAsync()
+    {
+        await DragGhostImage.TranslateTo(_dragGhostOrigin.X, _dragGhostOrigin.Y, 180, Easing.CubicOut);
+        await HideDragGhostAsync();
+    }
+
+    /// <summary>
+    /// Walks up the visual tree from element to root, summing each
+    /// ancestor's layout-relative Bounds.X/Y to get element's position in
+    /// root's own coordinate space - MAUI has no built-in "position on
+    /// screen" query. Subtracts a ScrollView's ScrollX/ScrollY wherever the
+    /// walk passes through one, since a ScrollView's Content keeps its
+    /// unscrolled layout Bounds regardless of how far it's actually been
+    /// scrolled (scrolling is a render-time pan, not a layout change).
+    /// Used to place the drag ghost exactly over the chip it's copying, and
+    /// to hit-test the ghost against each hand slot's Border.
+    /// </summary>
+    private static Point GetAbsolutePosition(VisualElement element, VisualElement root)
+    {
+        double x = 0, y = 0;
+        VisualElement? current = element;
+
+        while (current != null && !ReferenceEquals(current, root))
+        {
+            x += current.Bounds.X;
+            y += current.Bounds.Y;
+
+            if (current.Parent is ScrollView scrollView && ReferenceEquals(scrollView.Content, current))
+            {
+                x -= scrollView.ScrollX;
+                y -= scrollView.ScrollY;
+            }
+
+            current = current.Parent as VisualElement;
+        }
+
+        return new Point(x, y);
     }
 
     /// <summary>
     /// Adds chipValue to handIndex's bet (or its War bet, if that's the
     /// current betting target), clamped to the table maximum. Shared by
-    /// both chip-betting interactions - drag-and-drop (HandleChipDrop) and
-    /// tap-to-bet (the hand-slot tap handler wired up in
-    /// CreateHandSlotView) - so a chip placed either way behaves identically.
+    /// both chip-betting interactions - the custom chip drag
+    /// (ChipImage_OnPanUpdated) and tap-to-bet (the hand-slot tap handler
+    /// wired up in CreateHandSlotView) - so a chip placed either way
+    /// behaves identically.
     /// </summary>
     private async Task PlaceChipOnHandAsync(int handIndex, decimal chipValue)
     {

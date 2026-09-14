@@ -6,6 +6,17 @@
              BackgroundColor="#0B3D2E">
 
     <!--
+        Root layer: the whole scrollable table (below) plus, on top of it
+        and outside every ScrollView's clipping bounds, a single free-
+        floating "ghost" chip image used for the smooth custom chip-drag
+        (see MainPage.xaml.cs ChipImage_OnPanUpdated). It has to live here,
+        as a sibling of the page's ScrollViews rather than inside either of
+        them, or it would get visually clipped the moment it's dragged past
+        the edge of whichever ScrollView it started in.
+    -->
+    <Grid x:Name="RootLayout">
+
+    <!--
         Game table: dealer area, 1-5 player hand slots (built dynamically
         per the chosen hand count - see MainPage.xaml.cs), a shared bet/
         result readout, and the chip/action button rows. Wrapped in
@@ -101,62 +112,61 @@
             <!--
                 Row 5: Chip tray - horizontally scrollable so it fits on a
                 phone width. Betting supports two interactions side by side:
-                drag-and-drop (press and drag a chip image down onto the
-                hand slot in Row 2 you want to bet with - see
-                MainPage.xaml.cs ChipDrag_DragStarting for the drag source
-                and the DropGestureRecognizer wired onto each hand slot's
-                Border in CreateHandSlotView for the drop target), and
-                tap-to-bet (tap a chip to "hold" it - see ChipImage_OnTapped
-                - then tap a hand slot to place it there; added as a
-                universal fallback since drag gestures can be unreliable in
-                some environments, e.g. the iOS Simulator). Both paths route
-                through the same PlaceChipOnHandAsync so they stay
-                consistent. Each Image's ClassId carries its dollar
-                denomination, since Image has no CommandParameter. Clear/All
-                In stay as ordinary tap buttons - they aren't chips, so
-                dragging doesn't apply.
+                a custom smooth drag (press and drag a chip - a free-
+                floating "ghost" copy of it follows your finger 1:1 the
+                whole way, escaping this ScrollView's clipping via
+                RootLayout/DragGhostImage at the very bottom of this page -
+                see MainPage.xaml.cs ChipImage_OnPanUpdated) onto the hand
+                slot (Row 2) you want to bet with, and tap-to-bet (tap a
+                chip to "hold" it - see ChipImage_OnTapped - then tap a hand
+                slot to place it there; a fallback for anywhere a drag
+                gesture is awkward). Both paths route through the same
+                PlaceChipOnHandAsync so they stay perfectly consistent. Each
+                Image's ClassId carries its dollar denomination, since Image
+                has no CommandParameter. Clear/All In stay as ordinary tap
+                buttons - they aren't chips, so dragging doesn't apply.
             -->
             <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout x:Name="ChipButtonsLayout" Spacing="10" HorizontalOptions="Center">
                     <Image Source="chip_1.png" ClassId="1" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
-                            <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                             <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_5.png" ClassId="5" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
-                            <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                             <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_10.png" ClassId="10" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
-                            <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                             <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_25.png" ClassId="25" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
-                            <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                             <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_100.png" ClassId="100" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
-                            <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                             <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_1000.png" ClassId="1000" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
-                            <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                             <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
                     <Image Source="chip_10000.png" ClassId="10000" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
-                            <DragGestureRecognizer CanDrag="True" DragStarting="ChipDrag_DragStarting"/>
+                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                             <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                         </Image.GestureRecognizers>
                     </Image>
@@ -181,4 +191,17 @@
             </ScrollView>
         </Grid>
     </ScrollView>
+
+        <!--
+            The drag ghost itself - a plain, input-transparent copy of
+            whichever chip is being dragged. Positioned purely via
+            TranslationX/TranslationY (see GetAbsolutePosition in the
+            code-behind), never via layout, so it can be placed at any
+            absolute point on the page. Hidden and fully transparent until a
+            drag actually starts.
+        -->
+        <Image x:Name="DragGhostImage" WidthRequest="56" HeightRequest="56" Aspect="AspectFit"
+               HorizontalOptions="Start" VerticalOptions="Start"
+               InputTransparent="True" IsVisible="False" Opacity="0" ZIndex="999"/>
+    </Grid>
 </ContentPage>
