@@ -84,15 +84,13 @@ public partial class MainPage : ContentPage
     /// <summary>Which hand slot the drag ghost is currently hovering over, or -1 for none - set by UpdateDragHoverHighlight, read by ChipImage_OnPanUpdated on release to decide where the chip lands.</summary>
     private int _dragHoverHandIndex = -1;
 
+    /// <summary>War Blackjack only: true when _dragHoverHandIndex's WAR bet border (rather than its main bet border) is what the drag ghost is currently over - see UpdateDragHoverHighlight/CreateHandSlotView.</summary>
+    private bool _dragHoverIsWar;
+
     /// <summary>Which hand slot Hit/Stand/Double currently apply to; -1 when no round is in progress.</summary>
     private int _activeHandIndex = -1;
 
     private bool _roundInProgress;
-
-    /// <summary>War Blackjack only: whether chip taps currently size the main bet or the optional War side bet.</summary>
-    private enum BettingTarget { MainBet, WarBet }
-
-    private BettingTarget _bettingTarget = BettingTarget.MainBet;
 
     /// <summary>War Blackjack only: hand indices whose War card beat the dealer's and are waiting on a Press-or-Cash-Out choice, processed one at a time.</summary>
     private readonly Queue<int> _warDecisionQueue = new();
@@ -253,14 +251,13 @@ public partial class MainPage : ContentPage
         PlayerHandsLayout.Children.Clear();
         for (var i = 0; i < _hands.Count; i++)
         {
-            var (border, view) = CreateHandSlotView(i);
+            var (container, view) = CreateHandSlotView(i);
             _handSlotViews.Add(view);
-            PlayerHandsLayout.Children.Add(border);
+            PlayerHandsLayout.Children.Add(container);
         }
 
         _activeHandIndex = savedRound.ActiveHandIndex;
         _selectedBetIndex = savedRound.SelectedBetIndex;
-        _bettingTarget = savedRound.BettingTarget == nameof(BettingTarget.WarBet) ? BettingTarget.WarBet : BettingTarget.MainBet;
 
         _warDecisionQueue.Clear();
         foreach (var handIndex in savedRound.WarDecisionQueue)
@@ -284,7 +281,6 @@ public partial class MainPage : ContentPage
         UpdateShoeDisplay();
         UpdateWarUiVisibility();
         UpdateTotalWageredText();
-        BetTargetButton.Text = _bettingTarget == BettingTarget.MainBet ? "Betting: Main Bet" : "Betting: War Bet";
 
         // The dealer's hole card is only ever revealed inside EndRound,
         // which never ran (or this wouldn't have been saved as "in
@@ -364,7 +360,6 @@ public partial class MainPage : ContentPage
             }).ToList(),
             ActiveHandIndex = _activeHandIndex,
             SelectedBetIndex = _selectedBetIndex,
-            BettingTarget = _bettingTarget.ToString(),
             WarDecisionQueue = _warDecisionQueue.ToList(),
             PendingWarDecisionHandIndex = _pendingWarDecisionHandIndex,
             WalletBalanceAtRoundStart = _walletBalanceAtRoundStart,
@@ -377,6 +372,9 @@ public partial class MainPage : ContentPage
     private sealed class HandSlotView
     {
         public required Border Border { get; init; }
+
+        /// <summary>War Blackjack only: the small drop target below Border for this hand's own War side bet (see CreateHandSlotView) - hidden entirely for the other variants (see UpdateWarUiVisibility).</summary>
+        public required Border WarBorder { get; init; }
         public required FlexLayout CardsLayout { get; init; }
         public required Image ChipImage { get; init; }
         public required Label BetLabel { get; init; }
@@ -408,9 +406,9 @@ public partial class MainPage : ContentPage
 
         for (var i = 0; i < _handCount; i++)
         {
-            var (border, view) = CreateHandSlotView(i);
+            var (container, view) = CreateHandSlotView(i);
             _handSlotViews.Add(view);
-            PlayerHandsLayout.Children.Add(border);
+            PlayerHandsLayout.Children.Add(container);
         }
 
         RefreshHandSlotHighlights();
@@ -418,14 +416,24 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// Builds one hand slot's Border and bundled view - shared by
-    /// BuildHandSlots (the normal 1-5 seats) and SplitButton_OnClicked
-    /// (inserting a brand new hand mid-round when a pair is split).
-    /// handIndex is only used to wire up its tap-to-select-for-betting
-    /// gesture, which is a no-op mid-round anyway (see SelectHandForBetting),
-    /// so it doesn't need to stay accurate if later hands shift position.
+    /// Builds one hand slot's whole view - shared by BuildHandSlots (the
+    /// normal 1-5 seats) and SplitButton_OnClicked (inserting a brand new
+    /// hand mid-round when a pair is split). The returned Container is what
+    /// actually gets added to PlayerHandsLayout - it's the main Border
+    /// (cards/chip/bet/value/result) stacked above WarBorder, a second,
+    /// smaller drop target for this hand's own optional War side bet
+    /// (War Blackjack only - hidden for the other variants, see
+    /// UpdateWarUiVisibility). Keeping War's bet as its own separate,
+    /// always-visible target - rather than a mode toggle that repurposes
+    /// the same chip taps - means both bets can be sized side by side
+    /// without switching modes; War is still dealt and resolved before
+    /// blackjack play starts (see DealButton_OnClicked/StartWarPhase), only
+    /// how it's bet on changes. handIndex is only used to wire up each
+    /// border's tap-to-select-for-betting gesture, which is a no-op
+    /// mid-round anyway (see SelectHandForBetting), so it doesn't need to
+    /// stay accurate if later hands shift position.
     /// </summary>
-    private (Border Border, HandSlotView View) CreateHandSlotView(int handIndex)
+    private (VerticalStackLayout Container, HandSlotView View) CreateHandSlotView(int handIndex)
     {
         var cardsLayout = new FlexLayout
         {
@@ -441,7 +449,6 @@ public partial class MainPage : ContentPage
         // UpdateHandSlotBetDisplay.
         var chipImage = new Image { HeightRequest = 32, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
         var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
-        var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11, IsVisible = _variant is WarBlackjackVariant };
         var valueLabel = new Label { Text = "", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
         var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFD700"), HorizontalOptions = LayoutOptions.Center, FontSize = 10, FontAttributes = FontAttributes.Bold };
 
@@ -449,7 +456,7 @@ public partial class MainPage : ContentPage
         {
             HorizontalOptions = LayoutOptions.Fill,
             Spacing = 2,
-            Children = { cardsLayout, chipImage, betLabel, warBetLabel, valueLabel, resultLabel },
+            Children = { cardsLayout, chipImage, betLabel, valueLabel, resultLabel },
         };
 
         var border = new Border
@@ -473,7 +480,7 @@ public partial class MainPage : ContentPage
             // mirrors what dropping that chip on this slot would do.
             if (_heldChipDenomination is { } heldDenomination)
             {
-                _ = PlaceChipOnHandAsync(handIndex, heldDenomination);
+                _ = PlaceChipOnHandAsync(handIndex, heldDenomination, targetWar: false);
             }
             else
             {
@@ -488,9 +495,54 @@ public partial class MainPage : ContentPage
         // manually, by UpdateDragHoverHighlight hit-testing this Border's
         // own absolute bounds against the drag ghost's current position.
 
+        // War Blackjack only - a second, smaller drop target for this
+        // hand's own War side bet, sitting right below its main Border.
+        // Its own tap gesture mirrors the main Border's, just always
+        // targeting the War bet - see PlaceChipOnHandAsync's targetWar
+        // parameter. Visibility is toggled per variant by
+        // UpdateWarUiVisibility, not built conditionally here, so it
+        // doesn't have to be rebuilt if the variant changes without the
+        // hand count also changing.
+        var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#7FB3FF"), HorizontalOptions = LayoutOptions.Center, FontSize = 11, FontAttributes = FontAttributes.Bold };
+        var warBorder = new Border
+        {
+            Stroke = Color.FromArgb("#3A5B7A"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = 4,
+            Margin = 2,
+            WidthRequest = HandSlotBorderWidth,
+            HorizontalOptions = LayoutOptions.Start,
+            BackgroundColor = Color.FromArgb("#132A3D"),
+            IsVisible = _variant is WarBlackjackVariant,
+            Content = warBetLabel,
+        };
+
+        var warTap = new TapGestureRecognizer();
+        warTap.Tapped += (_, _) =>
+        {
+            if (_heldChipDenomination is { } heldWarDenomination)
+            {
+                _ = PlaceChipOnHandAsync(handIndex, heldWarDenomination, targetWar: true);
+            }
+            else
+            {
+                SelectHandForBetting(handIndex);
+            }
+        };
+        warBorder.GestureRecognizers.Add(warTap);
+
+        var container = new VerticalStackLayout
+        {
+            Spacing = 4,
+            HorizontalOptions = LayoutOptions.Start,
+            Children = { border, warBorder },
+        };
+
         var view = new HandSlotView
         {
             Border = border,
+            WarBorder = warBorder,
             CardsLayout = cardsLayout,
             ChipImage = chipImage,
             BetLabel = betLabel,
@@ -499,28 +551,36 @@ public partial class MainPage : ContentPage
             ResultLabel = resultLabel,
         };
 
-        return (border, view);
+        return (container, view);
     }
 
     /// <summary>
-    /// Shows/hides the War-only betting-target toggle and each hand slot's
-    /// War bet label based on the current variant, and resets betting back
-    /// to the main bet whenever War isn't the active variant.
+    /// Shows/hides each hand slot's WarBorder (its own War side-bet drop
+    /// target - see CreateHandSlotView) based on the current variant, and
+    /// zeroes out any leftover War bet whenever War isn't the active
+    /// variant, so a stale amount from a previous War game can't silently
+    /// carry over into a variant that doesn't use it.
     /// </summary>
     private void UpdateWarUiVisibility()
     {
         var isWar = _variant is WarBlackjackVariant;
-        BetTargetButton.IsVisible = isWar;
-
-        if (!isWar)
-        {
-            _bettingTarget = BettingTarget.MainBet;
-            BetTargetButton.Text = "Betting: Main Bet";
-        }
 
         foreach (var view in _handSlotViews)
         {
-            view.WarBetLabel.IsVisible = isWar;
+            view.WarBorder.IsVisible = isWar;
+        }
+
+        if (!isWar)
+        {
+            foreach (var hand in _hands)
+            {
+                hand.WarBet = 0;
+            }
+
+            for (var i = 0; i < _handSlotViews.Count; i++)
+            {
+                UpdateHandSlotBetDisplay(i);
+            }
         }
 
         UpdateWarTotalLabel();
@@ -575,9 +635,18 @@ public partial class MainPage : ContentPage
     {
         for (var i = 0; i < _handSlotViews.Count; i++)
         {
+            var view = _handSlotViews[i];
             var isHighlighted = _roundInProgress ? i == _activeHandIndex : i == _selectedBetIndex;
-            _handSlotViews[i].Border.Stroke = isHighlighted ? Color.FromArgb("#FFD700") : Color.FromArgb("#8FBFA9");
-            _handSlotViews[i].Border.StrokeThickness = isHighlighted ? 3 : 1;
+            view.Border.Stroke = isHighlighted ? Color.FromArgb("#FFD700") : Color.FromArgb("#8FBFA9");
+            view.Border.StrokeThickness = isHighlighted ? 3 : 1;
+
+            // WarBorder doesn't take part in the selected/active gold
+            // highlight (only Border does) - it only ever lights up while a
+            // chip drag is actually hovering over it (see
+            // UpdateDragHoverHighlight), so resetting it back to its resting
+            // color here is what un-highlights it once a drag ends.
+            view.WarBorder.Stroke = Color.FromArgb("#3A5B7A");
+            view.WarBorder.StrokeThickness = 1;
         }
 
         RefreshActionButtonVisibility();
@@ -651,6 +720,7 @@ public partial class MainPage : ContentPage
                 _isDraggingChip = true;
                 _dragGhostOrigin = GetAbsolutePosition(chipImage, RootLayout);
                 _dragHoverHandIndex = -1;
+                _dragHoverIsWar = false;
 
                 DragGhostImage.Source = chipImage.Source;
                 DragGhostImage.TranslationX = _dragGhostOrigin.X;
@@ -685,12 +755,14 @@ public partial class MainPage : ContentPage
                 chipImage.Opacity = 1;
 
                 var targetHandIndex = _dragHoverHandIndex;
+                var targetIsWar = _dragHoverIsWar;
                 _dragHoverHandIndex = -1;
+                _dragHoverIsWar = false;
                 RefreshHandSlotHighlights();
 
                 if (targetHandIndex >= 0)
                 {
-                    await PlaceChipOnHandAsync(targetHandIndex, denomination);
+                    await PlaceChipOnHandAsync(targetHandIndex, denomination, targetIsWar);
                     await HideDragGhostAsync();
                 }
                 else
@@ -703,6 +775,7 @@ public partial class MainPage : ContentPage
                 _isDraggingChip = false;
                 chipImage.Opacity = 1;
                 _dragHoverHandIndex = -1;
+                _dragHoverIsWar = false;
                 RefreshHandSlotHighlights();
                 await ReturnDragGhostHomeAsync();
                 break;
@@ -728,29 +801,53 @@ public partial class MainPage : ContentPage
             DragGhostImage.TranslationY + dragGhostSize / 2);
 
         var newHoverIndex = -1;
+        var newHoverIsWar = false;
         for (var i = 0; i < _handSlotViews.Count; i++)
         {
-            var border = _handSlotViews[i].Border;
-            var bounds = new Rect(GetAbsolutePosition(border, RootLayout), border.Bounds.Size);
-            if (bounds.Contains(ghostCenter))
+            var view = _handSlotViews[i];
+            var mainBounds = new Rect(GetAbsolutePosition(view.Border, RootLayout), view.Border.Bounds.Size);
+            if (mainBounds.Contains(ghostCenter))
             {
                 newHoverIndex = i;
+                newHoverIsWar = false;
+                break;
+            }
+
+            // War Blackjack only - WarBorder is hidden (and so never
+            // measured/positioned) for the other variants, so there's
+            // nothing meaningful to hit-test against then.
+            if (!view.WarBorder.IsVisible)
+            {
+                continue;
+            }
+
+            var warBounds = new Rect(GetAbsolutePosition(view.WarBorder, RootLayout), view.WarBorder.Bounds.Size);
+            if (warBounds.Contains(ghostCenter))
+            {
+                newHoverIndex = i;
+                newHoverIsWar = true;
                 break;
             }
         }
 
-        if (newHoverIndex == _dragHoverHandIndex)
+        if (newHoverIndex == _dragHoverHandIndex && newHoverIsWar == _dragHoverIsWar)
         {
             return;
         }
 
         _dragHoverHandIndex = newHoverIndex;
+        _dragHoverIsWar = newHoverIsWar;
 
         for (var i = 0; i < _handSlotViews.Count; i++)
         {
-            var isHovered = i == _dragHoverHandIndex;
-            _handSlotViews[i].Border.Stroke = isHovered ? Color.FromArgb("#7FB3FF") : Color.FromArgb("#8FBFA9");
-            _handSlotViews[i].Border.StrokeThickness = isHovered ? 3 : 1;
+            var view = _handSlotViews[i];
+            var isMainHovered = i == _dragHoverHandIndex && !_dragHoverIsWar;
+            view.Border.Stroke = isMainHovered ? Color.FromArgb("#7FB3FF") : Color.FromArgb("#8FBFA9");
+            view.Border.StrokeThickness = isMainHovered ? 3 : 1;
+
+            var isWarHovered = i == _dragHoverHandIndex && _dragHoverIsWar;
+            view.WarBorder.Stroke = isWarHovered ? Color.FromArgb("#7FB3FF") : Color.FromArgb("#3A5B7A");
+            view.WarBorder.StrokeThickness = isWarHovered ? 3 : 1;
         }
     }
 
@@ -804,14 +901,17 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// Adds chipValue to handIndex's bet (or its War bet, if that's the
-    /// current betting target), clamped to the table maximum. Shared by
-    /// both chip-betting interactions - the custom chip drag
-    /// (ChipImage_OnPanUpdated) and tap-to-bet (the hand-slot tap handler
-    /// wired up in CreateHandSlotView) - so a chip placed either way
-    /// behaves identically.
+    /// Adds chipValue to handIndex's bet (or its own separate War bet, when
+    /// targetWar is set - War Blackjack only, ignored for the other
+    /// variants since there's no War bet to target then), clamped to the
+    /// table maximum. Shared by both chip-betting interactions - the custom
+    /// chip drag (ChipImage_OnPanUpdated, which resolves targetWar from
+    /// which drop target - Border or WarBorder - the ghost was released
+    /// over) and tap-to-bet (the separate main/War tap handlers wired up in
+    /// CreateHandSlotView) - so a chip placed either way behaves
+    /// identically.
     /// </summary>
-    private async Task PlaceChipOnHandAsync(int handIndex, decimal chipValue)
+    private async Task PlaceChipOnHandAsync(int handIndex, decimal chipValue, bool targetWar)
     {
         if (_roundInProgress)
         {
@@ -826,7 +926,7 @@ public partial class MainPage : ContentPage
         SelectHandForBetting(handIndex);
 
         var slot = _hands[handIndex];
-        var targetingWarBet = _bettingTarget == BettingTarget.WarBet && _variant is WarBlackjackVariant;
+        var targetingWarBet = targetWar && _variant is WarBlackjackVariant;
         var currentAmount = targetingWarBet ? slot.WarBet : slot.Bet;
 
         if (currentAmount >= ChipWallet.TableMaximum)
@@ -917,6 +1017,7 @@ public partial class MainPage : ContentPage
         await chipImage.FadeToAsync(1, ChipPlacedAnimationDurationMs);
     }
 
+    /// <summary>Wipes both of the selected hand's bets (main and, for War Blackjack, its own War bet too) back to $0 - there's no separate "mode" to clear one at a time anymore, so Clear just clears everything on that hand.</summary>
     private void ClearBetButton_OnClicked(object? sender, EventArgs e)
     {
         if (_roundInProgress)
@@ -925,30 +1026,11 @@ public partial class MainPage : ContentPage
         }
 
         var slot = _hands[_selectedBetIndex];
-
-        if (_bettingTarget == BettingTarget.WarBet && _variant is WarBlackjackVariant)
-        {
-            slot.WarBet = 0;
-        }
-        else
-        {
-            slot.Bet = 0;
-        }
+        slot.Bet = 0;
+        slot.WarBet = 0;
 
         UpdateHandSlotBetDisplay(_selectedBetIndex);
         UpdateTotalWageredText();
-    }
-
-    /// <summary>War Blackjack only: toggles whether chip taps/Clear size the main bet or the War side bet.</summary>
-    private void BetTargetButton_OnClicked(object? sender, EventArgs e)
-    {
-        if (_roundInProgress)
-        {
-            return;
-        }
-
-        _bettingTarget = _bettingTarget == BettingTarget.MainBet ? BettingTarget.WarBet : BettingTarget.MainBet;
-        BetTargetButton.Text = _bettingTarget == BettingTarget.MainBet ? "Betting: Main Bet" : "Betting: War Bet";
     }
 
     /// <summary>
@@ -1760,9 +1842,9 @@ public partial class MainPage : ContentPage
         _hands.Insert(insertIndex, newSlot);
         _activeHandIndex++;
 
-        var (border, view) = CreateHandSlotView(insertIndex);
+        var (container, view) = CreateHandSlotView(insertIndex);
         _handSlotViews.Insert(insertIndex, view);
-        PlayerHandsLayout.Children.Insert(insertIndex, border);
+        PlayerHandsLayout.Children.Insert(insertIndex, container);
 
         UpdateBalanceText();
         UpdateHandSlotBetDisplay(_activeHandIndex);

@@ -35,9 +35,6 @@ public sealed class InProgressRoundState
     public required int ActiveHandIndex { get; init; }
     public required int SelectedBetIndex { get; init; }
 
-    /// <summary>"MainBet" or "WarBet" - MainPage's private BettingTarget enum, by name.</summary>
-    public required string BettingTarget { get; init; }
-
     /// <summary>War Blackjack only - which hand indices still have a pending Press/Cash-Out decision, in the order they'll be asked.</summary>
     public required List<int> WarDecisionQueue { get; init; }
 

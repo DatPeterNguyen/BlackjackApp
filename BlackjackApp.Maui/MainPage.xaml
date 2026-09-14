@@ -23,7 +23,7 @@
         ScrollViews throughout so nothing overflows on a phone screen.
     -->
     <ScrollView>
-        <Grid Padding="16" RowSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+        <Grid Padding="16" RowSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
 
             <!-- Row 0: Top bar -->
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
@@ -102,15 +102,7 @@
             </Border>
 
             <!--
-                Row 4: War Blackjack only - toggles whether chip taps size
-                the main blackjack bet or the optional War side bet for the
-                selected hand. Hidden entirely for the other variants.
-            -->
-            <Button x:Name="BetTargetButton" Grid.Row="4" Text="Betting: Main Bet" IsVisible="False"
-                    HorizontalOptions="Center" Padding="12,6" Clicked="BetTargetButton_OnClicked"/>
-
-            <!--
-                Row 5: Chip tray - horizontally scrollable so it fits on a
+                Row 4: Chip tray - horizontally scrollable so it fits on a
                 phone width. Betting supports two interactions side by side:
                 a custom smooth drag (press and drag a chip - a free-
                 floating "ghost" copy of it follows your finger 1:1 the
@@ -126,7 +118,7 @@
                 has no CommandParameter. Clear/All In stay as ordinary tap
                 buttons - they aren't chips, so dragging doesn't apply.
             -->
-            <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+            <ScrollView Grid.Row="4" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout x:Name="ChipButtonsLayout" Spacing="10" HorizontalOptions="Center">
                     <Image Source="chip_1.png" ClassId="1" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
                         <Image.GestureRecognizers>
@@ -175,8 +167,8 @@
                 </HorizontalStackLayout>
             </ScrollView>
 
-            <!-- Row 6: Action buttons - also horizontally scrollable -->
-            <ScrollView Grid.Row="6" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+            <!-- Row 5: Action buttons - also horizontally scrollable -->
+            <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                 <HorizontalStackLayout Spacing="4" HorizontalOptions="Center">
                     <Button x:Name="DealButton" Text="Deal" WidthRequest="90" HeightRequest="44" Margin="2" FontAttributes="Bold" Clicked="DealButton_OnClicked"/>
                     <!-- No IsEnabled="False" here - RefreshActionButtonVisibility (code-behind) is the sole gatekeeper now, hiding each one entirely via IsVisible rather than graying it out, so it also needs to start out enabled. -->
