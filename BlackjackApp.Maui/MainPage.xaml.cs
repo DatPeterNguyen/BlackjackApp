@@ -811,8 +811,22 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        if (_dealerHand.Cards.Count == 0 || DealerUpCardCouldBeBlackjack(_dealerHand.Cards[0]))
+        if (_dealerHand.Cards.Count == 0)
         {
+            return;
+        }
+
+        if (DealerUpCardCouldBeBlackjack(_dealerHand.Cards[0]))
+        {
+            // Can't safely pay yet - the dealer's hole card might complete a
+            // blackjack of their own, which would push instead of lose.
+            // Without this, the hand just sits with a blank result until
+            // EndRound resolves it several seconds later, which reads
+            // exactly like the instant payout silently failing rather than
+            // correctly waiting. EndRound below overwrites this placeholder
+            // (rather than appending after it) once it actually resolves.
+            slot.ResultText = "Blackjack! Waiting on dealer's hole card...";
+            slot.HasPendingBlackjack = true;
             return;
         }
 
@@ -1480,7 +1494,16 @@ public partial class MainPage : ContentPage
             // The original bet was already deducted up front, so returning
             // to the balance means giving back the bet itself plus/minus payout.
             _wallet.Add(slot.Bet + payout);
-            slot.ResultText += DescribeOutcome(outcome, payout);
+
+            // A deferred natural blackjack's ResultText is still the
+            // "Waiting on dealer's hole card..." placeholder from
+            // TryPayEarlyBlackjack, not a real outcome - replace it outright
+            // instead of appending after it. Every other hand keeps
+            // appending, since some already carry real text from earlier in
+            // the round (a War press/cash-out note, for instance).
+            slot.ResultText = slot.HasPendingBlackjack
+                ? DescribeOutcome(outcome, payout)
+                : slot.ResultText + DescribeOutcome(outcome, payout);
             slot.IsFinished = true;
             _stats.RecordHand(ClassifyHandResult(outcome));
         }

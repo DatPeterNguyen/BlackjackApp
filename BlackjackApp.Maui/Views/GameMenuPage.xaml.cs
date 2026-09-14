@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using BlackjackApp.core.Services;
 using BlackjackApp.core.Variants;
 using BlackjackApp.Maui;
 
@@ -32,6 +33,9 @@ public partial class GameMenuPage : ContentPage
     private int _deckCount;
     private int _handCount;
 
+    /// <summary>Start menu only - makes the automatic daily-reward popup fire at most once per visit to the menu, rather than every time a modal closes over it.</summary>
+    private bool _checkInPromptShown;
+
     /// <summary>Forwarded straight through from SettingsPage.SettingsSaved when Table Settings is used from the mid-game menu, so MainPage only ever needs to listen to this one event regardless of which page the save actually came from. Not used in start-menu mode - there's no live game yet to apply anything to.</summary>
     public event Action<IGameVariant, int, int>? SettingsSaved;
 
@@ -54,13 +58,89 @@ public partial class GameMenuPage : ContentPage
         StatsBorder.IsVisible = isStartMenu;
         ResetProgressButton.IsVisible = isStartMenu;
         ExitToMenuButton.IsVisible = !isStartMenu;
+        DailyRewardButton.IsVisible = isStartMenu;
         CloseButton.IsVisible = !isStartMenu;
         RefreshVariantSummary();
 
         if (isStartMenu)
         {
             RefreshStatsDisplay();
+            RefreshDailyRewardButton();
         }
+    }
+
+    /// <summary>
+    /// Start menu only (item 14) - opens the daily check-in reward. It also
+    /// opens on its own from OnAppearing the first time the menu appears with
+    /// something to claim, so a returning player never has to go looking for
+    /// it; this button is how they check the streak the rest of the time.
+    /// </summary>
+    private async void DailyRewardButton_OnClicked(object? sender, EventArgs e)
+    {
+        await ShowCheckInAsync();
+    }
+
+    private async Task ShowCheckInAsync()
+    {
+        var checkInPage = new CheckInPage();
+        checkInPage.Claimed += () =>
+        {
+            RefreshStatsDisplay();
+            RefreshDailyRewardButton();
+        };
+
+        await Navigation.PushModalAsync(checkInPage);
+    }
+
+    /// <summary>Badges the button whenever a reward is actually waiting, so the menu itself advertises it rather than hiding it behind a tap.</summary>
+    private void RefreshDailyRewardButton()
+    {
+        if (!_isStartMenu)
+        {
+            return;
+        }
+
+        var status = CurrentCheckInStatus();
+
+        DailyRewardButton.Text = status.CanClaim
+            ? $"Daily Reward - Day {status.StreakDay} Ready!"
+            : "Daily Reward";
+        DailyRewardButton.FontAttributes = status.CanClaim ? FontAttributes.Bold : FontAttributes.None;
+    }
+
+    private static CheckInStatus CurrentCheckInStatus() => DailyCheckIn.GetStatus(
+        GameProgressStorage.LoadLastCheckIn(),
+        GameProgressStorage.LoadCheckInStreakDay(),
+        DateOnly.FromDateTime(DateTime.Now));
+
+    /// <summary>
+    /// Re-reads the saved stats and streak every time the start menu comes
+    /// back into view (returning from a game, from Settings, or from the
+    /// reward itself), and pops the daily reward open unprompted the first
+    /// time it appears with something to claim. The short delay lets the menu
+    /// finish appearing before a modal gets stacked on top of it.
+    /// </summary>
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+
+        if (!_isStartMenu)
+        {
+            return;
+        }
+
+        RefreshStatsDisplay();
+        RefreshDailyRewardButton();
+
+        if (_checkInPromptShown || !CurrentCheckInStatus().CanClaim)
+        {
+            return;
+        }
+
+        _checkInPromptShown = true;
+
+        await Task.Delay(250);
+        await ShowCheckInAsync();
     }
 
     private void RefreshVariantSummary() => VariantSummaryLabel.Text = $"Currently playing: {_currentVariant.Name}";
@@ -69,6 +149,8 @@ public partial class GameMenuPage : ContentPage
     private void RefreshStatsDisplay()
     {
         var stats = GameProgressStorage.LoadStats();
+
+        MenuBalanceLabel.Text = $"Balance: ${GameProgressStorage.LoadBalance():N0}";
 
         RecordLabel.Text = $"Record: {stats.Wins}W - {stats.Losses}L - {stats.Pushes}P";
 

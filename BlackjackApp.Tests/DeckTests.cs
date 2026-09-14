@@ -1,4 +1,7 @@
+using System;
+using System.Linq;
 using BlackjackApp.core.Models;
+using NUnit.Framework;
 
 namespace BlackjackApp.Tests;
 

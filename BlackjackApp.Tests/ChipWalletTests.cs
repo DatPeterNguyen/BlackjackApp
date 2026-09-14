@@ -1,4 +1,5 @@
 using BlackjackApp.core.Economy;
+using NUnit.Framework;
 
 namespace BlackjackApp.Tests;
 

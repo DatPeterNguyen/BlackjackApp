@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BlackjackApp.Maui.Views.CheckInPage"
+             Title="Daily Reward"
+             BackgroundColor="#0B3D2E">
+
+    <!--
+        The daily check-in reward (item 14 on the polish list). Days 1-6 of a
+        streak pay a flat $100; day 7 pays a wheel spin worth $100 - $1,000.
+        All the streak arithmetic lives in BlackjackApp.core's DailyCheckIn
+        (pure and date-driven, so it's unit tested); this page only draws it
+        and persists the claim through GameProgressStorage.
+
+        The seven-day strip and the wheel's wedges are both built in
+        code-behind - the strip because its tiles restyle per day state, and
+        the wheel because it's drawn with a custom IDrawable (see
+        WheelDrawable in CheckInPage.xaml.cs) and spun by animating the
+        GraphicsView's Rotation onto the winning wedge.
+    -->
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
+            <Label Text="Daily Reward" TextColor="White" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center"/>
+            <Label x:Name="StreakSummaryLabel" Text="" TextColor="#8FBFA9" FontSize="13"
+                   HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
+
+            <!-- The 7-day cycle at a glance - tiles built by BuildDayStrip. -->
+            <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                <HorizontalStackLayout x:Name="DayStripLayout" Spacing="6" HorizontalOptions="Center"/>
+            </ScrollView>
+
+            <!--
+                Day 7 only. The GraphicsView draws the wheel and is what
+                actually rotates; the pointer sits on top of it, fixed, so
+                whichever wedge ends up under the pointer is the prize.
+            -->
+            <Grid x:Name="WheelContainer" IsVisible="False" HeightRequest="250" WidthRequest="250"
+                  HorizontalOptions="Center" Margin="0,4,0,0">
+                <GraphicsView x:Name="WheelView" HeightRequest="240" WidthRequest="240"
+                              HorizontalOptions="Center" VerticalOptions="Center"/>
+                <Polygon Points="0,0 24,0 12,20" Fill="#FFD700" Stroke="#0B3D2E" StrokeThickness="1"
+                         HorizontalOptions="Center" VerticalOptions="Start"/>
+            </Grid>
+
+            <Label x:Name="OutcomeLabel" Text="" TextColor="#FFD700" FontSize="17" FontAttributes="Bold"
+                   HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
+
+            <Button x:Name="ClaimButton" Text="Claim" HeightRequest="52" FontSize="17" FontAttributes="Bold"
+                    Margin="0,4,0,0" Clicked="ClaimButton_OnClicked"/>
+<!-- Debug builds only (see CheckInPage.xaml.cs) - jumps the saved streak to "day 6, claimed yesterday" so tapping Claim lands on today
+                 the real day-7 wheel, without waiting a week for it to come around naturally. Stays hidden and inert in Release. -->
+            <Button x:Name="DebugForceDayButton" Text="Debug: Force Day 7" HeightRequest="36" FontSize="12" IsVisible="False" Clicked="DebugForceDayButton_OnClicked"/>
+                        <Button x:Name="CloseButton" Text="Close" HeightRequest="44" Clicked="CloseButton_OnClicked"/>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

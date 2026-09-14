@@ -24,6 +24,7 @@
             <Border x:Name="StatsBorder" Stroke="#3A6B57" StrokeThickness="1" StrokeShape="RoundRectangle 8"
                     BackgroundColor="#0E4433" Padding="12" Margin="0,0,0,6">
                 <VerticalStackLayout Spacing="4">
+                    <Label x:Name="MenuBalanceLabel" Text="Balance: $1,000" TextColor="#FFD700" FontSize="17" FontAttributes="Bold" HorizontalOptions="Center"/>
                     <Label x:Name="RecordLabel" Text="Record: 0W - 0L - 0P" TextColor="White" FontSize="13" HorizontalOptions="Center"/>
                     <Label x:Name="NetProfitLabel" Text="Lifetime: $0" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center"/>
                     <Label x:Name="BiggestWinLossLabel" Text="Biggest win: $0  |  Biggest loss: $0" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
@@ -31,6 +32,8 @@
             </Border>
 
             <Button x:Name="PlayButton" Text="Play" HeightRequest="50" FontSize="16" FontAttributes="Bold" Clicked="PlayButton_OnClicked"/>
+            <!-- Start menu only (item 14) - the daily check-in reward. Opens on its own when a reward is waiting (see OnAppearing); this button is how the streak gets checked the rest of the time. -->
+            <Button x:Name="DailyRewardButton" Text="Daily Reward" HeightRequest="50" FontSize="16" Clicked="DailyRewardButton_OnClicked"/>
             <Button x:Name="HowToPlayButton" Text="How to Play" HeightRequest="50" FontSize="16" Clicked="HowToPlayButton_OnClicked"/>
             <Button x:Name="TableSettingsButton" Text="Table Settings" HeightRequest="50" FontSize="16" Clicked="TableSettingsButton_OnClicked"/>
             <!-- Mid-game only - abandons the current game entirely and returns to the real start menu, where a new game (mode/decks/hands and all) can be started fresh. -->

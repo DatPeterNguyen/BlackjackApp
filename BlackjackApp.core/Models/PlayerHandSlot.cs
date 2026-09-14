@@ -44,4 +44,15 @@ public class PlayerHandSlot
     /// of resolving (and paying) it a second time.
     /// </summary>
     public bool ResolvedEarly { get; set; }
+
+    /// <summary>
+    /// True for a natural blackjack that couldn't be paid the instant it was
+    /// dealt because the dealer's up card could still turn into a dealer
+    /// blackjack of their own (an Ace or a 10-value card) - the payout has
+    /// to wait until the hole card is revealed at EndRound. Lets the UI show
+    /// something other than a blank result while it waits (see
+    /// MainPage.TryPayEarlyBlackjack/EndRound), so the deferral reads as
+    /// "waiting on the dealer", not as the payout having silently vanished.
+    /// </summary>
+    public bool HasPendingBlackjack { get; set; }
 }
