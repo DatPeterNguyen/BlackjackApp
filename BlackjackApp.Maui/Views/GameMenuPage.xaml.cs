@@ -64,6 +64,7 @@ public partial class GameMenuPage : ContentPage
         ResetProgressButton.IsVisible = isStartMenu;
         ExitToMenuButton.IsVisible = !isStartMenu;
         DailyRewardButton.IsVisible = isStartMenu;
+        LeaderboardButton.IsVisible = isStartMenu;
         CloseButton.IsVisible = !isStartMenu;
         RefreshVariantSummary();
 
@@ -84,6 +85,12 @@ public partial class GameMenuPage : ContentPage
     private async void DailyRewardButton_OnClicked(object? sender, EventArgs e)
     {
         await ShowCheckInAsync();
+    }
+
+    /// <summary>Start menu only - opens the local leaderboard (see Views/LeaderboardPage).</summary>
+    private async void LeaderboardButton_OnClicked(object? sender, EventArgs e)
+    {
+        await Navigation.PushModalAsync(new LeaderboardPage());
     }
 
     private async Task ShowCheckInAsync()
