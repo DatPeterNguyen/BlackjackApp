@@ -57,7 +57,13 @@ jobs:
         run: dotnet workload restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
 
       - name: Restore NuGet dependencies
-        run: dotnet restore BlackjackApp.Maui/BlackjackApp.Maui.csproj -f net10.0-ios
+        # dotnet restore has no -f/--framework shorthand the way build/test
+        # do - passing one gets parsed as a second project path instead
+        # ("Only one project can be specified"). Restoring without it just
+        # restores every applicable TargetFramework for this OS (android,
+        # ios, maccatalyst on a Mac runner), which is what the already-run
+        # workload restore installed workloads for anyway.
+        run: dotnet restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
 
       - name: Run BlackjackApp.core unit tests
         # Cheap correctness gate before spending macOS-runner minutes on the
