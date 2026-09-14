@@ -89,6 +89,48 @@ jobs:
           path: ${{ steps.find-app.outputs.app_path }}
           retention-days: 14
 
+      - name: Boot a simulator and install the app
+        # The runner has no display and this workflow has no human at the
+        # keyboard, so there's no way to actually tap around the app from
+        # here - what this CAN prove, headlessly, is that it genuinely
+        # boots and runs in a real iOS Simulator rather than just compiling.
+        # The screenshot below is the evidence of that.
+        run: |
+          BUNDLE_ID="com.companyname.blackjackapp.maui"
+          echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_ENV"
+
+          RUNTIME=$(xcrun simctl list runtimes ios --json | python3 -c "import json,sys; runtimes=json.load(sys.stdin)['runtimes']; print(runtimes[-1]['identifier'])")
+          echo "Using runtime: $RUNTIME"
+
+          DEVICE_ID=$(xcrun simctl create "CI-iPhone" "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$RUNTIME")
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_ENV"
+
+          xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+          xcrun simctl install "$DEVICE_ID" "${{ steps.find-app.outputs.app_path }}"
+          xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID"
+
+          # Let the start-menu screen (and its daily-reward popup, if one's
+          # due) finish rendering before the screenshot below.
+          sleep 5
+
+      - name: Screenshot the running app
+        run: |
+          mkdir -p simulator-screenshots
+          xcrun simctl io "$device_id" screenshot simulator-screenshots/01-launch.png
+
+      - name: Upload simulator screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackjackApp-iOS-Simulator-Screenshot
+          path: simulator-screenshots/
+          retention-days: 14
+
+      - name: Shut down the simulator
+        if: always()
+        run: xcrun simctl shutdown "$device_id" || true
+
 # --- Once you have an Apple Developer Program account ($99/year) ---
 # A real device build (or a TestFlight upload) needs code signing, which
 # needs secrets this workflow doesn't have yet:
