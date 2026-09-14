@@ -1,0 +1,107 @@
+# Builds the iOS target on a macOS GitHub-hosted runner, since MAUI iOS
+# builds require Xcode and can't happen on the Windows dev machine this
+# project otherwise lives on. No Apple Developer account yet, so this
+# builds unsigned, for the iOS Simulator only - not something you can
+# install on a physical device or submit to TestFlight/the App Store.
+# Once you enroll in the Apple Developer Program, this can be extended
+# with a signing certificate/provisioning profile to produce a real
+# device build (see the comment at the bottom of this file).
+name: iOS Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'BlackjackApp.Maui/**'
+      - 'BlackjackApp.core/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'BlackjackApp.Maui/**'
+      - 'BlackjackApp.core/**'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build-ios-simulator:
+    # macOS runners are the only GitHub-hosted option with Xcode, and cost
+    # 10x the CI minutes of a Linux runner - the path filters above keep
+    # this from firing on every unrelated commit.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest available Xcode
+        run: |
+          LATEST_XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using $LATEST_XCODE"
+          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore MAUI workloads
+        run: dotnet workload restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
+
+      - name: Restore NuGet dependencies
+        run: dotnet restore BlackjackApp.Maui/BlackjackApp.Maui.csproj -f net10.0-ios
+
+      - name: Run BlackjackApp.core unit tests
+        # Cheap correctness gate before spending macOS-runner minutes on the
+        # actual iOS build - fails fast if a change broke game logic.
+        run: dotnet test BlackjackApp.Tests/BlackjackApp.Tests.csproj -c Release
+
+      - name: Build for iOS Simulator
+        run: >
+          dotnet build BlackjackApp.Maui/BlackjackApp.Maui.csproj
+          -f net10.0-ios
+          -c Debug
+          -p:RuntimeIdentifier=iossimulator-arm64
+          -p:BuildIpa=false
+
+      - name: Locate the built .app bundle
+        id: find-app
+        run: |
+          APP_PATH=$(find BlackjackApp.Maui/bin/Debug/net10.0-ios -maxdepth 2 -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app bundle found - build likely failed earlier." >&2
+            exit 1
+          fi
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .app bundle as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackjackApp-iOS-Simulator
+          path: ${{ steps.find-app.outputs.app_path }}
+          retention-days: 14
+
+# --- Once you have an Apple Developer Program account ($99/year) ---
+# A real device build (or a TestFlight upload) needs code signing, which
+# needs secrets this workflow doesn't have yet:
+#   1. Export your Distribution/Development certificate as a .p12 file.
+#   2. Create a provisioning profile for this app's bundle ID in the
+#      Apple Developer portal.
+#   3. Base64-encode both and store them as encrypted GitHub Actions
+#      secrets (Settings -> Secrets and variables -> Actions), along with
+#      the .p12's password.
+#   4. Add steps here to import the certificate into a temporary keychain
+#      and install the provisioning profile before the build step, then
+#      change RuntimeIdentifier to ios-arm64 and set the signing
+#      properties (CodesignKey, CodesignProvision, ArchiveOnBuild=true,
+#      BuildIpa=true) so the build produces a signed .ipa instead.
+# Ask for help wiring this up once enrollment goes through - it's a
+# bigger step than the simulator build above and worth doing carefully.
