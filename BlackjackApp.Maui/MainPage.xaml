@@ -179,6 +179,9 @@
                     <!-- War Blackjack only - shown after a hand's War card beats the dealer's, replacing the normal action buttons for that moment. -->
                     <Button x:Name="PressWarButton" Text="Press" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="PressWarButton_OnClicked"/>
                     <Button x:Name="CashOutWarButton" Text="Cash Out" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="CashOutWarButton_OnClicked"/>
+                    <!-- Standard Blackjack only - shown once, right after the opening deal, whenever the dealer's up card is an Ace (see MainPage.PromptForInsurance). -->
+                    <Button x:Name="InsuranceButton" Text="Insure" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="InsuranceButton_OnClicked"/>
+                    <Button x:Name="DeclineInsuranceButton" Text="No Insurance" WidthRequest="110" HeightRequest="44" Margin="2" FontSize="12" IsVisible="False" Clicked="DeclineInsuranceButton_OnClicked"/>
                 </HorizontalStackLayout>
             </ScrollView>
         </Grid>

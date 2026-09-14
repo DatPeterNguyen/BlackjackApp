@@ -51,6 +51,16 @@ public interface IGameVariant
 
     bool CanSplit(Hand hand);
 
+    /// <summary>
+    /// Whether this variant offers the insurance side bet (up to half the
+    /// original wager, paying 2:1 if the dealer's hole card completes a
+    /// blackjack) whenever the dealer's up card is an Ace. Standard
+    /// Blackjack only, per the design doc - War Blackjack already protects
+    /// against a dealer blackjack via its own War side bet, and Double Down
+    /// Madness's spec never mentions insurance at all.
+    /// </summary>
+    bool OffersInsurance { get; }
+
     /// <summary>Plays out the dealer's hand per this variant's house rules (e.g. hit until 17).</summary>
     void PlayDealerHand(Deck deck, Hand dealerHand);
 

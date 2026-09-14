@@ -213,6 +213,12 @@ public class StandardBlackjackVariantTests
         Assert.That(_variant.DetermineOutcome(playerHand, dealerHand), Is.EqualTo(RoundOutcome.Push));
     }
 
+    [Test]
+    public void OffersInsurance_IsTrue()
+    {
+        Assert.That(_variant.OffersInsurance, Is.True);
+    }
+
     [TestCase("PlayerBlackjack", 15.0)]
     [TestCase("PlayerWin", 10.0)]
     [TestCase("DealerBust", 10.0)]

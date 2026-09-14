@@ -201,6 +201,15 @@ public class WarBlackjackVariantTests
     }
 
     [Test]
+    public void OffersInsurance_IsFalseEvenThoughStandardBlackjackRulesOfferIt()
+    {
+        // Deliberately NOT delegated to the internal StandardBlackjackVariant
+        // (unlike EndsTurnAfterDouble/CanHit/etc. above) - War already has
+        // its own War side bet in place of a separate insurance bet.
+        Assert.That(_variant.OffersInsurance, Is.False);
+    }
+
+    [Test]
     public void CanHit_DelegatesToStandardBlackjackRules()
     {
         var bustHand = HandOf((Suit.Spades, Rank.King), (Suit.Hearts, Rank.Queen), (Suit.Clubs, Rank.Five));

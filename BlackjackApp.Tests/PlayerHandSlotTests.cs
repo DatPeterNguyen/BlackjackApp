@@ -18,6 +18,8 @@ public class PlayerHandSlotTests
             Assert.That(slot.HasBeenSplit, Is.False);
             Assert.That(slot.ResultText, Is.EqualTo(""));
             Assert.That(slot.ResolvedEarly, Is.False);
+            Assert.That(slot.InsuranceBet, Is.EqualTo(0));
+            Assert.That(slot.InsuranceResultText, Is.EqualTo(""));
         });
     }
 
@@ -76,6 +78,26 @@ public class PlayerHandSlotTests
         {
             Assert.That(slot.IsFinished, Is.True);
             Assert.That(slot.ResultText, Is.EqualTo("Blackjack! You win $15."));
+        });
+    }
+
+    [Test]
+    public void InsuranceBet_AndInsuranceResultText_CanBeSetIndependentlyOfTheMainBetAndResultText()
+    {
+        var slot = new PlayerHandSlot
+        {
+            Bet = 20,
+            InsuranceBet = 10,
+            ResultText = "Blackjack! You win $15.",
+            InsuranceResultText = "Insurance paid $20.",
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(slot.Bet, Is.EqualTo(20));
+            Assert.That(slot.InsuranceBet, Is.EqualTo(10));
+            Assert.That(slot.ResultText, Is.EqualTo("Blackjack! You win $15."));
+            Assert.That(slot.InsuranceResultText, Is.EqualTo("Insurance paid $20."));
         });
     }
 }

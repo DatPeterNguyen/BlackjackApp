@@ -104,6 +104,9 @@ public partial class MainPage : ContentPage
     /// <summary>War Blackjack only: true if any hand actually placed a War bet this round (whether it went on to win or lose) - set fresh in StartWarPhase, read by AdvanceWarDecisionQueue to decide whether the table pauses (see WarResultPauseBeforeSecondCards) before dealing the second cards. A round nobody bet War on has no War result worth pausing for.</summary>
     private bool _anyHandBetWarThisRound;
 
+    /// <summary>Standard Blackjack only: true while the table is waiting on the player's Insure/No Insurance decision after an opening deal where the dealer shows an Ace - see PromptForInsurance/ResolveInsuranceDecision.</summary>
+    private bool _insuranceDecisionPending;
+
     /// <summary>War Blackjack only: true if any hand actually won the War this round (i.e. got a Press/Cash-Out decision) - set fresh in StartWarPhase alongside _anyHandBetWarThisRound, used only to pick the right message to hold on screen during that pause (a win's own Press/Cash-Out result vs. a plain "Lost the War" summary when every War bet lost).</summary>
     private bool _anyHandWonWarThisRound;
 
@@ -255,6 +258,8 @@ public partial class MainPage : ContentPage
                 ResultText = saved.ResultText,
                 ResolvedEarly = saved.ResolvedEarly,
                 HasPendingBlackjack = saved.HasPendingBlackjack,
+                InsuranceBet = saved.InsuranceBet,
+                InsuranceResultText = saved.InsuranceResultText,
             };
 
             foreach (var card in saved.Cards)
@@ -284,6 +289,7 @@ public partial class MainPage : ContentPage
         }
 
         _pendingWarDecisionHandIndex = savedRound.PendingWarDecisionHandIndex;
+        _insuranceDecisionPending = savedRound.InsurancePending;
         _walletBalanceAtRoundStart = savedRound.WalletBalanceAtRoundStart;
         _roundInProgress = true;
 
@@ -321,6 +327,14 @@ public partial class MainPage : ContentPage
                 : $"You won the War (+${slot.WarBet:N0})! Press it into your bet, or cash out?";
             PressWarButton.IsVisible = true;
             CashOutWarButton.IsVisible = true;
+        }
+
+        if (_insuranceDecisionPending)
+        {
+            ResultLabel.Text = "Dealer shows an Ace. Insurance for half your bet(s)?";
+            InsuranceButton.IsVisible = true;
+            DeclineInsuranceButton.IsVisible = true;
+            RefreshActionButtonVisibility();
         }
     }
 
@@ -375,11 +389,14 @@ public partial class MainPage : ContentPage
                 ResultText = slot.ResultText,
                 ResolvedEarly = slot.ResolvedEarly,
                 HasPendingBlackjack = slot.HasPendingBlackjack,
+                InsuranceBet = slot.InsuranceBet,
+                InsuranceResultText = slot.InsuranceResultText,
             }).ToList(),
             ActiveHandIndex = _activeHandIndex,
             SelectedBetIndex = _selectedBetIndex,
             WarDecisionQueue = _warDecisionQueue.ToList(),
             PendingWarDecisionHandIndex = _pendingWarDecisionHandIndex,
+            InsurancePending = _insuranceDecisionPending,
             WalletBalanceAtRoundStart = _walletBalanceAtRoundStart,
         };
 
@@ -681,11 +698,12 @@ public partial class MainPage : ContentPage
     /// </summary>
     private void RefreshActionButtonVisibility()
     {
-        if (!_roundInProgress || _activeHandIndex < 0 || _pendingWarDecisionHandIndex >= 0)
+        if (!_roundInProgress || _activeHandIndex < 0 || _pendingWarDecisionHandIndex >= 0 || _insuranceDecisionPending)
         {
             // No hand is actively being played right now - either still
-            // betting, between rounds, or in the middle of a War
-            // Press/Cash-Out decision, which has its own dedicated buttons.
+            // betting, between rounds, in the middle of a War
+            // Press/Cash-Out decision, or waiting on an Insure/No Insurance
+            // decision - each of those has its own dedicated buttons.
             HitButton.IsVisible = false;
             StandButton.IsVisible = false;
             DoubleButton.IsVisible = false;
@@ -1301,8 +1319,24 @@ public partial class MainPage : ContentPage
         UpdateShoeDisplay();
         await RevealOpeningDeal(hideDealerHoleCard: true);
 
-        // Turn order plays rightmost-hand-first, same as the deal, so play
-        // starts on the highest-index unfinished hand, not the lowest.
+        if (ShouldOfferInsurance())
+        {
+            PromptForInsurance();
+            return;
+        }
+
+        await StartPlayAfterOpeningDeal();
+    }
+
+    /// <summary>
+    /// Turn order plays rightmost-hand-first, same as the deal, so play
+    /// starts on the highest-index unfinished hand, not the lowest. Shared
+    /// by DealOpeningHandsAndStartPlay's no-insurance-offered path and
+    /// ResolveInsuranceDecision's no-dealer-blackjack path, since both land
+    /// in exactly the same place once the opening deal is fully settled.
+    /// </summary>
+    private async Task StartPlayAfterOpeningDeal()
+    {
         _activeHandIndex = _hands.FindLastIndex(h => !h.IsFinished);
 
         if (_activeHandIndex == -1)
@@ -1313,6 +1347,98 @@ public partial class MainPage : ContentPage
         {
             RefreshHandSlotHighlights();
         }
+    }
+
+    /// <summary>True if this round should pause for an Insure/No Insurance decision - Standard Blackjack only (see IGameVariant.OffersInsurance), and only when the dealer's face-up card is an Ace.</summary>
+    private bool ShouldOfferInsurance() =>
+        _variant.OffersInsurance && _dealerHand.Cards.Count > 0 && _dealerHand.Cards[0].Rank == Rank.Ace;
+
+    /// <summary>Shows the Insure/No Insurance prompt and its dedicated buttons in place of the normal Hit/Stand row - see RefreshActionButtonVisibility's _insuranceDecisionPending gate.</summary>
+    private void PromptForInsurance()
+    {
+        _insuranceDecisionPending = true;
+        ResultLabel.Text = "Dealer shows an Ace. Insurance for half your bet(s)?";
+        InsuranceButton.IsVisible = true;
+        DeclineInsuranceButton.IsVisible = true;
+        RefreshActionButtonVisibility();
+        PersistInProgressRound();
+    }
+
+    private async void InsuranceButton_OnClicked(object? sender, EventArgs e) => await ResolveInsuranceDecision(tookInsurance: true);
+
+    private async void DeclineInsuranceButton_OnClicked(object? sender, EventArgs e) => await ResolveInsuranceDecision(tookInsurance: false);
+
+    /// <summary>
+    /// Settles the player's Insure/No Insurance choice. If they took it,
+    /// every hand puts up to half its own bet on insurance (skipping any
+    /// hand that can't afford even that), the dealer's already-dealt hole
+    /// card is checked right here - insurance is the one place this table
+    /// ever looks at it before the round would otherwise reveal it - and
+    /// insurance pays 2:1 per hand if it's a ten-value card, or is simply
+    /// lost if not. Declining (or every hand being unable to afford it)
+    /// skips straight to that same check with no wager placed. Either way,
+    /// a dealer blackjack ends the round immediately via EndRound (which
+    /// won't draw the dealer any further cards, since 21 already satisfies
+    /// PlayDealerHand's stopping condition) rather than letting the player
+    /// act on hands that can no longer do anything but lose or push.
+    /// </summary>
+    private async Task ResolveInsuranceDecision(bool tookInsurance)
+    {
+        if (!_insuranceDecisionPending)
+        {
+            return;
+        }
+
+        _insuranceDecisionPending = false;
+        InsuranceButton.IsVisible = false;
+        DeclineInsuranceButton.IsVisible = false;
+
+        var dealerHasBlackjack = _dealerHand.IsBlackjack;
+
+        if (tookInsurance)
+        {
+            for (var i = 0; i < _hands.Count; i++)
+            {
+                var slot = _hands[i];
+                var insuranceBet = slot.Bet / 2;
+
+                if (insuranceBet <= 0 || !_wallet.TryDeduct(insuranceBet))
+                {
+                    continue;
+                }
+
+                slot.InsuranceBet = insuranceBet;
+
+                if (dealerHasBlackjack)
+                {
+                    // Insurance pays 2:1 - return the staked insurance bet
+                    // itself plus double its value in profit, the same
+                    // "return stake, then add the profit" shape as every
+                    // other payout in this file.
+                    _wallet.Add(insuranceBet * 3);
+                    slot.InsuranceResultText = $"Insurance paid ${insuranceBet * 2:N0}. ";
+                }
+                else
+                {
+                    slot.InsuranceResultText = $"Insurance lost ${insuranceBet:N0}. ";
+                }
+
+                _handSlotViews[i].ResultLabel.Text = slot.InsuranceResultText;
+            }
+
+            UpdateBalanceText();
+        }
+
+        ResultLabel.Text = "";
+
+        if (dealerHasBlackjack)
+        {
+            await EndRound();
+            return;
+        }
+
+        await StartPlayAfterOpeningDeal();
+        PersistInProgressRound();
     }
 
     /// <summary>
@@ -2079,10 +2205,14 @@ public partial class MainPage : ContentPage
             // TryPayEarlyBlackjack, not a real outcome - replace it outright
             // instead of appending after it. Every other hand keeps
             // appending, since some already carry real text from earlier in
-            // the round (a War press/cash-out note, for instance).
+            // the round (a War press/cash-out note, for instance). Either
+            // way, InsuranceResultText (set separately in
+            // ResolveInsuranceDecision, if this hand took insurance) is
+            // prepended in front, since it's the one piece of this round's
+            // text that survives the pending-blackjack overwrite below.
             slot.ResultText = slot.HasPendingBlackjack
-                ? DescribeOutcome(outcome, payout)
-                : slot.ResultText + DescribeOutcome(outcome, payout);
+                ? slot.InsuranceResultText + DescribeOutcome(outcome, payout)
+                : slot.InsuranceResultText + slot.ResultText + DescribeOutcome(outcome, payout);
             slot.IsFinished = true;
             _stats.RecordHand(ClassifyHandResult(outcome));
         }

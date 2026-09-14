@@ -41,6 +41,9 @@ public sealed class InProgressRoundState
     /// <summary>War Blackjack only - the hand index currently awaiting a Press/Cash-Out decision, or -1 for none.</summary>
     public required int PendingWarDecisionHandIndex { get; init; }
 
+    /// <summary>Standard Blackjack only - true if the dealer's Ace up card is currently awaiting the player's Insure/No Insurance decision (see MainPage.PromptForInsurance).</summary>
+    public required bool InsurancePending { get; init; }
+
     public required decimal WalletBalanceAtRoundStart { get; init; }
 }
 
@@ -55,4 +58,6 @@ public sealed class SavedHandSlot
     public required string ResultText { get; init; }
     public required bool ResolvedEarly { get; init; }
     public required bool HasPendingBlackjack { get; init; }
+    public required int InsuranceBet { get; init; }
+    public required string InsuranceResultText { get; init; }
 }

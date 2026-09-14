@@ -70,6 +70,9 @@ public class DoubleDownMadnessVariant : IGameVariant
     /// <summary>Doubling does NOT end the turn - "double multiple times" and "hit after doubling" are both allowed.</summary>
     public bool EndsTurnAfterDouble => false;
 
+    /// <summary>No insurance in Double Down Madness - not part of its rule set.</summary>
+    public bool OffersInsurance => false;
+
     /// <summary>Splitting isn't offered in this variant at all.</summary>
     public bool CanSplit(Hand hand) => false;
 

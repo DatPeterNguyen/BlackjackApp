@@ -125,6 +125,15 @@ public class WarBlackjackVariant : IGameVariant
 
     public bool EndsTurnAfterDouble => _blackjackRules.EndsTurnAfterDouble;
 
+    /// <summary>
+    /// No separate insurance in War Blackjack - deliberately NOT delegated
+    /// to _blackjackRules (which would otherwise report true, since the
+    /// underlying StandardBlackjackVariant offers it). War already protects
+    /// against a dealer blackjack via its own War side bet, so a second,
+    /// separate insurance bet on top of that isn't part of this variant.
+    /// </summary>
+    public bool OffersInsurance => false;
+
     public bool CanSplit(Hand hand) => _blackjackRules.CanSplit(hand);
 
     public void PlayDealerHand(Deck deck, Hand dealerHand) => _blackjackRules.PlayDealerHand(deck, dealerHand);

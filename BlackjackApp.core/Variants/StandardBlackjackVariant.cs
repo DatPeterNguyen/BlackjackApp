@@ -58,6 +58,9 @@ public class StandardBlackjackVariant : IGameVariant
         hand.Cards.Count == 2 &&
         Hand.PointValue(hand.Cards[0].Rank) == Hand.PointValue(hand.Cards[1].Rank);
 
+    /// <summary>Standard Blackjack offers insurance whenever the dealer shows an Ace, per the design doc.</summary>
+    public bool OffersInsurance => true;
+
     /// <summary>
     /// Dealer hits on 16 or below, and also hits a soft 17 (an Ace still
     /// counted as 11) - H17, per the design doc. Only stands on a hard 17

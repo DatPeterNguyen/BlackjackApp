@@ -67,6 +67,12 @@ public class DoubleDownMadnessVariantTests
     }
 
     [Test]
+    public void OffersInsurance_IsFalse()
+    {
+        Assert.That(_variant.OffersInsurance, Is.False);
+    }
+
+    [Test]
     public void CanDoubleDown_TrueEvenWithSeveralCardsAlready()
     {
         // "Double down at virtually any time" - unlike Standard, a

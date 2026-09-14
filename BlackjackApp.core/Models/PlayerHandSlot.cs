@@ -55,4 +55,23 @@ public class PlayerHandSlot
     /// "waiting on the dealer", not as the payout having silently vanished.
     /// </summary>
     public bool HasPendingBlackjack { get; set; }
+
+    /// <summary>
+    /// This hand's own insurance side bet (Standard Blackjack only, offered
+    /// when the dealer shows an Ace - see IGameVariant.OffersInsurance),
+    /// up to half this hand's Bet. Zero means insurance wasn't offered, was
+    /// declined, or couldn't be afforded for this hand.
+    /// </summary>
+    public int InsuranceBet { get; set; }
+
+    /// <summary>
+    /// Set once this hand's insurance bet is resolved ("Insurance paid $X."
+    /// or "Insurance lost $X.") - kept separate from ResultText rather than
+    /// appended directly to it, because a hand with its own pending natural
+    /// blackjack (HasPendingBlackjack) has its ResultText fully overwritten
+    /// once EndRound resolves it; this survives that overwrite so the
+    /// insurance outcome isn't silently dropped for exactly the hands most
+    /// likely to have taken insurance.
+    /// </summary>
+    public string InsuranceResultText { get; set; } = "";
 }
