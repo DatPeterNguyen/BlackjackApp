@@ -281,22 +281,28 @@ public partial class GameMenuPage : ContentPage
     /// </summary>
     private async void ExitToMenuButton_OnClicked(object? sender, EventArgs e)
     {
-        var confirmed = await DisplayAlert(
-            "Exit to Menu?",
-            "This ends your current game. Any bet in progress is lost, and your balance reverts to whatever was last saved (right after your last finished round).",
-            "Exit to Menu",
-            "Cancel");
+        // If a hand is still in progress, it was already saved after the
+        // last action taken on it (see MainPage.PersistInProgressRound), so
+        // leaving via this button doesn't lose it - it'll be waiting on the
+        // start menu's Load Game button. Word the confirmation accordingly
+        // rather than warning about a loss that no longer happens.
+        var hasSavedRound = GameProgressStorage.HasInProgressRound();
+        var message = hasSavedRound
+            ? "Your current hand will be saved so you can pick it up later with Load Game."
+            : "This returns you to the start menu.";
+
+        var confirmed = await DisplayAlert("Exit to Menu?", message, "Exit to Menu", "Cancel");
 
         if (!confirmed)
         {
             return;
         }
 
-        // Abandoning the round outright - it's no longer resumable, so
-        // drop any mid-round save (see MainPage.PersistInProgressRound)
-        // rather than leaving a stale Load Game behind for a round that no
-        // longer exists.
-        GameProgressStorage.ClearInProgressRound();
+        // Deliberately NOT clearing the in-progress-round save here anymore
+        // - Exit to Menu is meant to be resumable via Load Game, not an
+        // abandon action (see the confirmation message above). The save is
+        // only ever cleared by finishing a round normally (MainPage.EndRound)
+        // or by Reset Progress.
 
         // Unwinding the modal stack page-by-page (this menu, then MainPage,
         // then whatever else got pushed on top) turned out to be unreliable
