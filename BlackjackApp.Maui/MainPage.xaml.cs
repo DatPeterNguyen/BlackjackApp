@@ -41,8 +41,7 @@ public partial class MainPage : ContentPage
     private int _deckCount = 4;
     private int _handCount = 1;
 
-    /// <summary>Set when Settings is saved mid-round - applied at the start of the next Deal instead of immediately, so an in-progress round never has its rules (or hand count) swapped out from under it.</summary>
-    private IGameVariant? _pendingVariant;
+    /// <summary>Set when Table Settings is saved mid-round - applied once EndRound finishes this round instead of immediately, so an in-progress round never has its hand count swapped out from under it.</summary>
     private int? _pendingDeckCount;
     private int? _pendingHandCount;
 
@@ -200,6 +199,178 @@ public partial class MainPage : ContentPage
         UpdateVariantLabel();
         UpdateTableColors();
         UpdateShoeDisplay();
+    }
+
+    /// <summary>
+    /// Resumes a round that was still in progress when the app last closed
+    /// - see InProgressRoundState, GameProgressStorage.LoadInProgressRound,
+    /// and GameMenuPage's Load Game button (start menu only). Rebuilds the
+    /// deck, dealer hand, every player hand slot, whose turn it is, and any
+    /// pending War decision exactly as PersistInProgressRound saved them,
+    /// then re-renders the table via the same RenderDealerHand/RenderHandSlot
+    /// used everywhere else - no dealing animation is replayed.
+    /// </summary>
+    public MainPage(InProgressRoundState savedRound)
+    {
+        InitializeComponent();
+
+        _variant = VariantFromKind(savedRound.VariantKind);
+        _deckCount = savedRound.DeckCount;
+        _handCount = savedRound.HandCount;
+
+        TableLimitsLabel.Text = $"${ChipWallet.TableMinimum:N0} - ${ChipWallet.TableMaximum:N0}";
+
+        _deck = Deck.Restore(savedRound.ShoeDeckCount, savedRound.ShoeRemainingCards, savedRound.ShoeDiscardedCards);
+
+        _dealerHand = new Hand();
+        foreach (var card in savedRound.DealerCards)
+        {
+            _dealerHand.AddCard(card);
+        }
+
+        _hands = savedRound.Hands.Select(saved =>
+        {
+            var slot = new PlayerHandSlot
+            {
+                Bet = saved.Bet,
+                WarBet = saved.WarBet,
+                IsFinished = saved.IsFinished,
+                HasBeenSplit = saved.HasBeenSplit,
+                ResultText = saved.ResultText,
+                ResolvedEarly = saved.ResolvedEarly,
+                HasPendingBlackjack = saved.HasPendingBlackjack,
+            };
+
+            foreach (var card in saved.Cards)
+            {
+                slot.Hand.AddCard(card);
+            }
+
+            return slot;
+        }).ToList();
+
+        _handSlotViews.Clear();
+        PlayerHandsLayout.Children.Clear();
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            var (border, view) = CreateHandSlotView(i);
+            _handSlotViews.Add(view);
+            PlayerHandsLayout.Children.Add(border);
+        }
+
+        _activeHandIndex = savedRound.ActiveHandIndex;
+        _selectedBetIndex = savedRound.SelectedBetIndex;
+        _bettingTarget = savedRound.BettingTarget == nameof(BettingTarget.WarBet) ? BettingTarget.WarBet : BettingTarget.MainBet;
+
+        _warDecisionQueue.Clear();
+        foreach (var handIndex in savedRound.WarDecisionQueue)
+        {
+            _warDecisionQueue.Enqueue(handIndex);
+        }
+
+        _pendingWarDecisionHandIndex = savedRound.PendingWarDecisionHandIndex;
+        _walletBalanceAtRoundStart = savedRound.WalletBalanceAtRoundStart;
+        _roundInProgress = true;
+
+        AllInButton.IsVisible = _handCount == 1;
+        TotalResultLabel.IsVisible = false;
+        TotalResultLabel.Text = "";
+        _needsTableClearOnNextBet = false;
+        _roundCardsDiscarded = true;
+
+        UpdateBalanceText();
+        UpdateVariantLabel();
+        UpdateTableColors();
+        UpdateShoeDisplay();
+        UpdateWarUiVisibility();
+        UpdateTotalWageredText();
+        BetTargetButton.Text = _bettingTarget == BettingTarget.MainBet ? "Betting: Main Bet" : "Betting: War Bet";
+
+        // The dealer's hole card is only ever revealed inside EndRound,
+        // which never ran (or this wouldn't have been saved as "in
+        // progress") - so it's always still hidden on resume.
+        RenderDealerHand(hideHoleCard: true);
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            RenderHandSlot(i);
+            UpdateHandSlotBetDisplay(i);
+        }
+
+        SetRoundInProgress(true);
+        RefreshHandSlotHighlights();
+
+        if (_pendingWarDecisionHandIndex >= 0)
+        {
+            var slot = _hands[_pendingWarDecisionHandIndex];
+            ResultLabel.Text = _hands.Count > 1
+                ? $"Hand {_pendingWarDecisionHandIndex + 1} won the War (+${slot.WarBet:N0})! Press it into your bet, or cash out?"
+                : $"You won the War (+${slot.WarBet:N0})! Press it into your bet, or cash out?";
+            PressWarButton.IsVisible = true;
+            CashOutWarButton.IsVisible = true;
+        }
+    }
+
+    /// <summary>"Standard", "DoubleDownMadness", or "War" - the compact, save-friendly identifier PersistInProgressRound stores for _variant (an IGameVariant instance itself isn't serializable).</summary>
+    private static string VariantKind(IGameVariant variant) => variant switch
+    {
+        DoubleDownMadnessVariant => "DoubleDownMadness",
+        WarBlackjackVariant => "War",
+        _ => "Standard",
+    };
+
+    /// <summary>The inverse of VariantKind - rebuilds a fresh IGameVariant instance from its saved identifier when resuming a round.</summary>
+    private static IGameVariant VariantFromKind(string kind) => kind switch
+    {
+        "DoubleDownMadness" => new DoubleDownMadnessVariant(),
+        "War" => new WarBlackjackVariant(),
+        _ => new StandardBlackjackVariant(),
+    };
+
+    /// <summary>
+    /// Snapshots the entire in-progress round - deck, dealer hand, every
+    /// hand slot, turn state, any pending War decision - to
+    /// GameProgressStorage, so GameMenuPage's Load Game button can restore
+    /// it exactly if the app gets closed mid-round. Called at the end of
+    /// every player/War action that changes round state; a no-op once the
+    /// round isn't in progress (EndRound explicitly clears the save
+    /// instead, right where it sets _roundInProgress = false).
+    /// </summary>
+    private void PersistInProgressRound()
+    {
+        if (!_roundInProgress || _deck is null)
+        {
+            return;
+        }
+
+        var state = new InProgressRoundState
+        {
+            VariantKind = VariantKind(_variant),
+            DeckCount = _deckCount,
+            HandCount = _handCount,
+            ShoeDeckCount = _deck.NumberOfDecks,
+            ShoeRemainingCards = _deck.RemainingCardsSnapshot().ToList(),
+            ShoeDiscardedCards = _deck.DiscardedCardsSnapshot().ToList(),
+            DealerCards = _dealerHand.Cards.ToList(),
+            Hands = _hands.Select(slot => new SavedHandSlot
+            {
+                Cards = slot.Hand.Cards.ToList(),
+                Bet = slot.Bet,
+                WarBet = slot.WarBet,
+                IsFinished = slot.IsFinished,
+                HasBeenSplit = slot.HasBeenSplit,
+                ResultText = slot.ResultText,
+                ResolvedEarly = slot.ResolvedEarly,
+                HasPendingBlackjack = slot.HasPendingBlackjack,
+            }).ToList(),
+            ActiveHandIndex = _activeHandIndex,
+            SelectedBetIndex = _selectedBetIndex,
+            BettingTarget = _bettingTarget.ToString(),
+            WarDecisionQueue = _warDecisionQueue.ToList(),
+            PendingWarDecisionHandIndex = _pendingWarDecisionHandIndex,
+            WalletBalanceAtRoundStart = _walletBalanceAtRoundStart,
+        };
+
+        GameProgressStorage.SaveInProgressRound(state);
     }
 
     /// <summary>Bundles the dynamically-created views for one hand slot, since XAML can't name a variable (1-5) number of them.</summary>
@@ -824,26 +995,25 @@ public partial class MainPage : ContentPage
         await Navigation.PushModalAsync(menuPage);
     }
 
-    private void OnSettingsSaved(IGameVariant variant, int deckCount, int handCount)
+    /// <summary>Table Settings only ever changes deck count and hand count now - the variant itself can only be chosen by starting a fresh game via Play/RulesPage (see GameMenuPage), so there's nothing here to queue or apply beyond those two numbers.</summary>
+    private void OnSettingsSaved(int deckCount, int handCount)
     {
         if (_roundInProgress)
         {
-            // Never swap the rules (or the number of hand slots) out from
-            // under a round that's already dealt - queue it instead and
-            // apply it once EndRound finishes this round.
-            _pendingVariant = variant;
+            // Never swap the number of hand slots out from under a round
+            // that's already dealt - queue it instead and apply it once
+            // EndRound finishes this round.
             _pendingDeckCount = deckCount;
             _pendingHandCount = handCount;
             ResultLabel.Text = "Settings saved - will apply once this round finishes.";
             return;
         }
 
-        ApplyVariantChange(variant, deckCount, handCount);
+        ApplyTableSettings(deckCount, handCount);
     }
 
-    private void ApplyVariantChange(IGameVariant variant, int deckCount, int handCount)
+    private void ApplyTableSettings(int deckCount, int handCount)
     {
-        _variant = variant;
         _deckCount = deckCount;
         _deck = null; // force a fresh shoe built at the new deck count on the next Deal
         UpdateShoeDisplay();
@@ -975,6 +1145,8 @@ public partial class MainPage : ContentPage
         {
             await DealOpeningHandsAndStartPlay();
         }
+
+        PersistInProgressRound();
     }
 
     /// <summary>How many cards left in the shoe triggers a reshuffle-before-next-round, scaled by how many hands are being dealt.</summary>
@@ -1331,6 +1503,7 @@ public partial class MainPage : ContentPage
         RenderHandSlot(_pendingWarDecisionHandIndex);
 
         await AdvanceWarDecisionQueue();
+        PersistInProgressRound();
     }
 
     /// <summary>Banks this hand's War stake plus its 1:1 winnings straight into the balance, leaving the blackjack bet untouched.</summary>
@@ -1353,6 +1526,7 @@ public partial class MainPage : ContentPage
         RenderHandSlot(_pendingWarDecisionHandIndex);
 
         await AdvanceWarDecisionQueue();
+        PersistInProgressRound();
     }
 
     /// <summary>War path, phase 2: once every War decision is settled, deals the dealer's and each hand's second card, plays the fly-in-from-the-shoe reveal for just those new cards, and starts real blackjack play (or resolves immediately on an all-blackjack round).</summary>
@@ -1442,6 +1616,7 @@ public partial class MainPage : ContentPage
         // advance, so button visibility needs a refresh regardless.
         RefreshActionButtonVisibility();
         await ContinueOrAdvance(cameFromDouble: false);
+        PersistInProgressRound();
     }
 
     private async void StandButton_OnClicked(object? sender, EventArgs e)
@@ -1453,6 +1628,7 @@ public partial class MainPage : ContentPage
 
         _hands[_activeHandIndex].IsFinished = true;
         await AdvanceToNextHandOrEndRound();
+        PersistInProgressRound();
     }
 
     private async void DoubleButton_OnClicked(object? sender, EventArgs e)
@@ -1498,6 +1674,7 @@ public partial class MainPage : ContentPage
         await RevealNewCardInHand(_activeHandIndex);
         RefreshActionButtonVisibility();
         await ContinueOrAdvance(cameFromDouble: true);
+        PersistInProgressRound();
     }
 
     /// <summary>
@@ -1609,6 +1786,8 @@ public partial class MainPage : ContentPage
             ResultLabel.Text = "";
             RefreshHandSlotHighlights();
         }
+
+        PersistInProgressRound();
     }
 
     /// <summary>
@@ -1793,6 +1972,12 @@ public partial class MainPage : ContentPage
         _roundInProgress = false;
         _activeHandIndex = -1;
 
+        // The round just finished normally (not abandoned) - it's no
+        // longer "unfinished", so drop any mid-round save (see
+        // PersistInProgressRound) that GameMenuPage's Load Game button
+        // would otherwise still offer.
+        GameProgressStorage.ClearInProgressRound();
+
         foreach (var slot in _hands)
         {
             slot.Bet = 0;
@@ -1817,10 +2002,9 @@ public partial class MainPage : ContentPage
         _roundCardsDiscarded = false;
         _ = ScheduleAutoDiscard();
 
-        if (_pendingVariant is not null && _pendingDeckCount is not null && _pendingHandCount is not null)
+        if (_pendingDeckCount is not null && _pendingHandCount is not null)
         {
-            ApplyVariantChange(_pendingVariant, _pendingDeckCount.Value, _pendingHandCount.Value);
-            _pendingVariant = null;
+            ApplyTableSettings(_pendingDeckCount.Value, _pendingHandCount.Value);
             _pendingDeckCount = null;
             _pendingHandCount = null;
         }

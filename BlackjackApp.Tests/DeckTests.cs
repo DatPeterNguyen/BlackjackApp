@@ -104,4 +104,52 @@ public class DeckTests
             Assert.That(deck.DiscardCount, Is.EqualTo(0));
         });
     }
+
+    [Test]
+    public void Restore_RebuildsTheExactRemainingAndDiscardedCardsGiven()
+    {
+        // Restore is what lets a mid-round save (see InProgressRoundState
+        // in BlackjackApp.Maui) come back exactly as it was left, rather
+        // than as a fresh, differently-ordered shoe - so it has to
+        // reproduce the exact remaining/discard lists given, not just the
+        // right counts.
+        var original = new Deck(numberOfDecks: 2, new Random(7));
+        var played = new[] { original.Draw(), original.Draw(), original.Draw() };
+        original.Discard(played);
+        var remainingBefore = original.RemainingCardsSnapshot();
+        var discardedBefore = original.DiscardedCardsSnapshot();
+
+        var restored = Deck.Restore(original.NumberOfDecks, remainingBefore, discardedBefore);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(restored.NumberOfDecks, Is.EqualTo(original.NumberOfDecks));
+            Assert.That(restored.CardsRemaining, Is.EqualTo(remainingBefore.Count));
+            Assert.That(restored.DiscardCount, Is.EqualTo(discardedBefore.Count));
+            Assert.That(restored.RemainingCardsSnapshot(), Is.EqualTo(remainingBefore));
+            Assert.That(restored.DiscardedCardsSnapshot(), Is.EqualTo(discardedBefore));
+        });
+    }
+
+    [Test]
+    public void Restore_DrawsCardsInTheSameOrderTheOriginalShoeWould()
+    {
+        // Not just the same cards - the same TOP-of-shoe order, so drawing
+        // after a restore continues exactly where the original left off.
+        var original = new Deck(numberOfDecks: 1, new Random(3));
+        var expectedNextDraws = new[] { original.Draw(), original.Draw() };
+        // Put those two back on top in the same order before snapshotting,
+        // so Restore starts from a shoe that still has them next up.
+        var remaining = original.RemainingCardsSnapshot()
+            .Concat(expectedNextDraws)
+            .ToList();
+
+        var restored = Deck.Restore(original.NumberOfDecks, remaining, original.DiscardedCardsSnapshot());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(restored.Draw(), Is.EqualTo(expectedNextDraws[1]));
+            Assert.That(restored.Draw(), Is.EqualTo(expectedNextDraws[0]));
+        });
+    }
 }

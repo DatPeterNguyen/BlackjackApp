@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using BlackjackApp.core.Services;
 using BlackjackApp.core.Variants;
@@ -11,20 +12,23 @@ namespace BlackjackApp.Maui.Views;
 /// screens depending on _isStartMenu:
 ///  - Start menu (the app's actual first screen now, wired up as
 ///    AppShell's ShellContent instead of MainPage - see the parameterless
-///    constructor and AppShell.xaml): shows Play/How to Play/Table
-///    Settings. Play opens RulesPage as a mode picker - tap a variant to
-///    select it, then RulesPage's own Play button confirms and actually
-///    starts a new game with it (see StartGameWith). How to Play opens the
-///    same rules content purely for reference (no selection, no Play
-///    button there).
-///  - Mid-game menu (opened from MainPage's own top-bar Menu button): no
-///    Play button (there's already a game in progress) - just How to Play
-///    (reference only - picking a different mode mid-hand belongs in Table
-///    Settings, which already knows how to queue the change until the
-///    round finishes), Table Settings, Exit to Menu (abandons the current
-///    game and resets all the way back to the real start menu - see
+///    constructor and AppShell.xaml): shows Play/Load Game/Daily Reward/
+///    Table Settings. Play opens RulesPage as a mode picker - tap a
+///    variant to select it, then RulesPage's own Play button confirms and
+///    actually starts a new game with it (see StartGameWith). Load Game
+///    resumes a round that was still in progress when the app last closed
+///    (see GameProgressStorage.HasInProgressRound/LoadInProgressRound and
+///    MainPage's resume constructor) - hidden whenever there's nothing
+///    saved to resume.
+///  - Mid-game menu (opened from MainPage's own top-bar Menu button):
+///    Table Settings, Exit to Menu (abandons the current game and resets
+///    all the way back to the real start menu - see
 ///    ExitToMenuButton_OnClicked), and Close to get back to the game in
 ///    progress.
+/// Table Settings itself is a small inline overlay on this same page
+/// (SettingsOverlayBackdrop/SettingsOverlayCard in the XAML) rather than a
+/// separate pushed page - it's just deck count and hand count now, since
+/// the variant can only be chosen by starting a fresh game via Play.
 /// </summary>
 public partial class GameMenuPage : ContentPage
 {
@@ -36,8 +40,8 @@ public partial class GameMenuPage : ContentPage
     /// <summary>Start menu only - makes the automatic daily-reward popup fire at most once per visit to the menu, rather than every time a modal closes over it.</summary>
     private bool _checkInPromptShown;
 
-    /// <summary>Forwarded straight through from SettingsPage.SettingsSaved when Table Settings is used from the mid-game menu, so MainPage only ever needs to listen to this one event regardless of which page the save actually came from. Not used in start-menu mode - there's no live game yet to apply anything to.</summary>
-    public event Action<IGameVariant, int, int>? SettingsSaved;
+    /// <summary>Forwarded straight through from the Table Settings overlay's Save button when it's used from the mid-game menu, so MainPage only ever needs to listen to this one event regardless of which page instance the save actually came from. Carries just deck count and hand count now - not used in start-menu mode, since there's no live game yet to apply anything to.</summary>
+    public event Action<int, int>? SettingsSaved;
 
     /// <summary>Parameterless constructor for AppShell's ShellContent DataTemplate - this is what actually makes GameMenuPage the app's start screen.</summary>
     public GameMenuPage() : this(new StandardBlackjackVariant(), 4, 1, isStartMenu: true)
@@ -55,6 +59,7 @@ public partial class GameMenuPage : ContentPage
         Title = isStartMenu ? "Blackjack" : "Menu";
         MenuTitleLabel.Text = isStartMenu ? "Blackjack" : "Menu";
         PlayButton.IsVisible = isStartMenu;
+        LoadGameButton.IsVisible = false; // refreshed below once we know whether there's actually a save
         StatsBorder.IsVisible = isStartMenu;
         ResetProgressButton.IsVisible = isStartMenu;
         ExitToMenuButton.IsVisible = !isStartMenu;
@@ -66,6 +71,7 @@ public partial class GameMenuPage : ContentPage
         {
             RefreshStatsDisplay();
             RefreshDailyRewardButton();
+            RefreshLoadGameButton();
         }
     }
 
@@ -113,12 +119,37 @@ public partial class GameMenuPage : ContentPage
         GameProgressStorage.LoadCheckInStreakDay(),
         DateOnly.FromDateTime(DateTime.Now));
 
+    /// <summary>Start menu only - shows Load Game only when there's actually an unfinished round saved (see GameProgressStorage.HasInProgressRound), so it doesn't sit there as a dead button on a normal fresh launch.</summary>
+    private void RefreshLoadGameButton()
+    {
+        if (!_isStartMenu)
+        {
+            return;
+        }
+
+        LoadGameButton.IsVisible = GameProgressStorage.HasInProgressRound();
+    }
+
+    /// <summary>Start menu only - opens the saved in-progress round exactly as MainPage.PersistInProgressRound left it. If the save turns out to be missing or unreadable (GameProgressStorage.LoadInProgressRound already treats a corrupt save as none), just refreshes the button away instead of launching anything.</summary>
+    private async void LoadGameButton_OnClicked(object? sender, EventArgs e)
+    {
+        var savedRound = GameProgressStorage.LoadInProgressRound();
+
+        if (savedRound is null)
+        {
+            RefreshLoadGameButton();
+            return;
+        }
+
+        await Navigation.PushModalAsync(new MainPage(savedRound));
+    }
+
     /// <summary>
     /// Re-reads the saved stats and streak every time the start menu comes
-    /// back into view (returning from a game, from Settings, or from the
-    /// reward itself), and pops the daily reward open unprompted the first
-    /// time it appears with something to claim. The short delay lets the menu
-    /// finish appearing before a modal gets stacked on top of it.
+    /// back into view (returning from a game, from the settings overlay, or
+    /// from the reward itself), and pops the daily reward open unprompted the
+    /// first time it appears with something to claim. The short delay lets
+    /// the menu finish appearing before a modal gets stacked on top of it.
     /// </summary>
     protected override async void OnAppearing()
     {
@@ -131,6 +162,7 @@ public partial class GameMenuPage : ContentPage
 
         RefreshStatsDisplay();
         RefreshDailyRewardButton();
+        RefreshLoadGameButton();
 
         if (_checkInPromptShown || !CurrentCheckInStatus().CanClaim)
         {
@@ -182,12 +214,6 @@ public partial class GameMenuPage : ContentPage
         await Navigation.PushModalAsync(new RulesPage(_currentVariant.Name, StartGameWith));
     }
 
-    /// <summary>Pure reference in both contexts - no selection, no bottom Play button. Starting/changing a mode always goes through PlayButton_OnClicked (start menu) or Table Settings (mid-game) instead.</summary>
-    private async void HowToPlayButton_OnClicked(object? sender, EventArgs e)
-    {
-        await Navigation.PushModalAsync(new RulesPage(_currentVariant.Name));
-    }
-
     /// <summary>Called when RulesPage's Play button confirms a mode selection (start menu only) - closes Rules and launches a fresh game with that variant.</summary>
     private async Task StartGameWith(IGameVariant variant)
     {
@@ -199,36 +225,51 @@ public partial class GameMenuPage : ContentPage
     }
 
     /// <summary>
-    /// Just pushes Settings on top of THIS page - deliberately the same
-    /// single push in both start-menu and mid-game contexts, rather than
-    /// popping this menu first and immediately pushing Settings in its
-    /// place. That pop-then-push sequence turned out to be unreliable (two
-    /// modal navigation calls racing back to back), so this instead leaves
-    /// the mid-game menu underneath Settings the whole time; Settings pops
-    /// only itself on Save, landing back on this menu, and Close (already
-    /// wired up) is what actually returns to the game in progress.
+    /// Opens the Table Settings overlay right on top of this same page -
+    /// no navigation at all, so it works identically whether this is the
+    /// start menu or the mid-game menu. Populates the deck/hand count
+    /// pickers from whatever's current before showing it.
     /// </summary>
-    private async void TableSettingsButton_OnClicked(object? sender, EventArgs e)
+    private void TableSettingsButton_OnClicked(object? sender, EventArgs e)
     {
-        var settingsPage = new SettingsPage(_currentVariant, _deckCount, _handCount);
-        settingsPage.SettingsSaved += (variant, deckCount, handCount) =>
+        DeckCountPicker.ItemsSource = new List<string> { "1", "2", "3", "4", "5", "6" };
+        DeckCountPicker.SelectedIndex = Math.Clamp(_deckCount - 1, 0, 5);
+
+        HandCountPicker.ItemsSource = new List<string> { "1", "2", "3", "4", "5" };
+        HandCountPicker.SelectedIndex = Math.Clamp(_handCount - 1, 0, 4);
+
+        SettingsOverlayBackdrop.IsVisible = true;
+        SettingsOverlayCard.IsVisible = true;
+    }
+
+    /// <summary>Applies the chosen deck/hand counts, forwards them on via SettingsSaved (mid-game only - see the class doc comment), and closes the overlay.</summary>
+    private void SettingsSaveButton_OnClicked(object? sender, EventArgs e)
+    {
+        var deckCount = DeckCountPicker.SelectedIndex + 1; // index 0 = 1 deck
+        var handCount = HandCountPicker.SelectedIndex + 1; // index 0 = 1 hand
+
+        _deckCount = deckCount;
+        _handCount = handCount;
+
+        // Start menu: nothing else to notify - there's no live game yet,
+        // just remembered locally for whenever Play is next tapped.
+        // Mid-game: forward on to MainPage so it actually applies (or
+        // queues) the change.
+        if (!_isStartMenu)
         {
-            _currentVariant = variant;
-            _deckCount = deckCount;
-            _handCount = handCount;
-            RefreshVariantSummary();
+            SettingsSaved?.Invoke(deckCount, handCount);
+        }
 
-            // Start menu: nothing else to notify - there's no live game yet,
-            // just remembered locally for whenever Play is next tapped.
-            // Mid-game: forward on to MainPage so it actually applies (or
-            // queues) the change.
-            if (!_isStartMenu)
-            {
-                SettingsSaved?.Invoke(variant, deckCount, handCount);
-            }
-        };
+        HideSettingsOverlay();
+    }
 
-        await Navigation.PushModalAsync(settingsPage);
+    /// <summary>Closes the overlay without applying anything - wired to both the Cancel button and a tap on the backdrop.</summary>
+    private void SettingsCancelButton_OnClicked(object? sender, EventArgs e) => HideSettingsOverlay();
+
+    private void HideSettingsOverlay()
+    {
+        SettingsOverlayBackdrop.IsVisible = false;
+        SettingsOverlayCard.IsVisible = false;
     }
 
     /// <summary>
@@ -250,6 +291,12 @@ public partial class GameMenuPage : ContentPage
         {
             return;
         }
+
+        // Abandoning the round outright - it's no longer resumable, so
+        // drop any mid-round save (see MainPage.PersistInProgressRound)
+        // rather than leaving a stale Load Game behind for a round that no
+        // longer exists.
+        GameProgressStorage.ClearInProgressRound();
 
         // Unwinding the modal stack page-by-page (this menu, then MainPage,
         // then whatever else got pushed on top) turned out to be unreliable
@@ -281,6 +328,7 @@ public partial class GameMenuPage : ContentPage
 
         GameProgressStorage.ResetAll();
         RefreshStatsDisplay();
+        RefreshLoadGameButton();
     }
 
     private async void CloseButton_OnClicked(object? sender, EventArgs e)

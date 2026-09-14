@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using BlackjackApp.core.Economy;
 using Microsoft.Maui.Storage;
 
@@ -6,12 +7,11 @@ namespace BlackjackApp.Maui;
 
 /// <summary>
 /// Auto-saves the player's balance and lifetime stats (item 13 on the
-/// polish list) plus their daily check-in streak (item 14) via
+/// polish list), their daily check-in streak (item 14), and - since a
+/// player can close the app mid-hand - a full snapshot of whatever round
+/// was still in progress (see InProgressRoundState), all via
 /// Microsoft.Maui.Storage.Preferences - simple durable key-value storage
-/// that survives app restarts. Deliberately just the balance, stats and
-/// streak, not a full game-state save: there's no mid-round resume, a fresh
-/// launch (or a new game after Exit to Menu) just picks up the wallet and
-/// record where they were left.
+/// that survives app restarts.
 ///
 /// ChipWallet and GameStats both live in BlackjackApp.core, which targets
 /// plain net (no MAUI platform surface), so Preferences can't be called
@@ -31,6 +31,7 @@ public static class GameProgressStorage
     private const string BiggestLossKey = "progress_biggest_loss";
     private const string LastCheckInKey = "progress_last_check_in";
     private const string CheckInStreakDayKey = "progress_check_in_streak_day";
+    private const string InProgressRoundKey = "progress_in_progress_round_json";
 
     private const string DateFormat = "yyyy-MM-dd";
 
@@ -99,5 +100,43 @@ public static class GameProgressStorage
         Preferences.Default.Remove(BiggestWinKey);
         Preferences.Default.Remove(BiggestLossKey);
         Preferences.Default.Remove(CheckInStreakDayKey);
+        ClearInProgressRound();
     }
+
+    /// <summary>True while a round is saved as still in progress - drives whether GameMenuPage's start menu shows the Load Game button.</summary>
+    public static bool HasInProgressRound() => !string.IsNullOrEmpty(Preferences.Default.Get(InProgressRoundKey, string.Empty));
+
+    /// <summary>Snapshots an in-progress round - see MainPage.PersistInProgressRound, called after every action that changes round state while a round is active.</summary>
+    public static void SaveInProgressRound(InProgressRoundState state) =>
+        Preferences.Default.Set(InProgressRoundKey, JsonSerializer.Serialize(state));
+
+    /// <summary>
+    /// Reads back the saved in-progress round, or null if there isn't one
+    /// (including if the saved JSON is somehow corrupt/from an incompatible
+    /// older shape - treated as "no save" rather than crashing the start
+    /// menu on launch, and the bad entry is cleared so HasInProgressRound
+    /// stops reporting it).
+    /// </summary>
+    public static InProgressRoundState? LoadInProgressRound()
+    {
+        var json = Preferences.Default.Get(InProgressRoundKey, string.Empty);
+
+        if (string.IsNullOrEmpty(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<InProgressRoundState>(json);
+        }
+        catch (JsonException)
+        {
+            ClearInProgressRound();
+            return null;
+        }
+    }
+
+    /// <summary>Called once a round is no longer "in progress" - either it finished normally (see MainPage.EndRound) or the player abandoned it (GameMenuPage's Exit to Menu).</summary>
+    public static void ClearInProgressRound() => Preferences.Default.Remove(InProgressRoundKey);
 }

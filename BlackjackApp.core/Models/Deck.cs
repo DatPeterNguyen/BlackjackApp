@@ -19,6 +19,33 @@ public class Deck
     /// <summary>How many played cards are currently sitting in the discard pile, waiting for the next reshuffle.</summary>
     public int DiscardCount => _discard.Count;
 
+    /// <summary>
+    /// Rebuilds a Deck with an EXACT remaining-shoe/discard-pile state,
+    /// rather than a freshly shuffled full shoe - used to restore an
+    /// in-progress game exactly as it was left (see InProgressRoundState
+    /// and GameProgressStorage in BlackjackApp.Maui), preserving shoe
+    /// order and discard count so NeedsReshuffle and the eventual
+    /// reshuffle behave exactly as they would have if the app had never
+    /// closed. random is only used for any FUTURE shuffle (e.g. the next
+    /// ReshuffleDiscardIntoShoe), never applied to the restored cards
+    /// themselves.
+    /// </summary>
+    public static Deck Restore(int numberOfDecks, IEnumerable<Card> remainingCards, IEnumerable<Card> discardedCards, Random? random = null)
+    {
+        var deck = new Deck(numberOfDecks, random);
+        deck._cards.Clear();
+        deck._cards.AddRange(remainingCards);
+        deck._discard.Clear();
+        deck._discard.AddRange(discardedCards);
+        return deck;
+    }
+
+    /// <summary>A snapshot copy of the cards still left in the shoe, in their current order (the last element is the "top" - see Draw) - for persisting an in-progress game (see Deck.Restore).</summary>
+    public IReadOnlyList<Card> RemainingCardsSnapshot() => _cards.ToList();
+
+    /// <summary>A snapshot copy of the discard pile - for persisting an in-progress game (see Deck.Restore).</summary>
+    public IReadOnlyList<Card> DiscardedCardsSnapshot() => _discard.ToList();
+
     public Deck(int numberOfDecks = 4, Random? random = null)
     {
         /*
