@@ -87,6 +87,9 @@ public partial class MainPage : ContentPage
     /// <summary>War Blackjack only: true when _dragHoverHandIndex's WAR bet border (rather than its main bet border) is what the drag ghost is currently over - see UpdateDragHoverHighlight/CreateHandSlotView.</summary>
     private bool _dragHoverIsWar;
 
+    /// <summary>Each hand slot's absolute Border/WarBorder hit-test bounds, snapshotted once per drag by CacheDragHitTestBounds - this geometry is static for the whole duration of a drag, so UpdateDragHoverHighlight (called on every high-frequency PanGestureRecognizer "Running" tick) reads from here instead of re-walking the visual tree on every call.</summary>
+    private readonly List<(Rect MainBounds, Rect? WarBounds)> _dragHitTestBounds = new();
+
     /// <summary>Which hand slot Hit/Stand/Double currently apply to; -1 when no round is in progress.</summary>
     private int _activeHandIndex = -1;
 
@@ -159,6 +162,9 @@ public partial class MainPage : ContentPage
 
     /// <summary>Pause after each card lands before the next one is dealt, so a deal reads as one card at a time instead of everything landing at once.</summary>
     private const int CardDealStaggerMs = 90;
+
+    /// <summary>Cap on how many layout-yield attempts AnimateCardFromShoe will wait through for a just-added card's Bounds to become non-empty before giving up and animating with whatever it has - a single Task.Yield isn't reliably enough for a native measure/arrange pass to finish, especially inside nested layouts, so this polls a few frames instead of guessing wrong on some fraction of dealt cards.</summary>
+    private const int MaxLayoutWaitAttempts = 10;
 
     /// <summary>How long a finished round's cards stay on the table before they automatically fly off to the discard pile.</summary>
     private static readonly TimeSpan TableHoldBeforeDiscard = TimeSpan.FromSeconds(5);
@@ -730,6 +736,7 @@ public partial class MainPage : ContentPage
                 _dragGhostOrigin = GetAbsolutePosition(chipImage, RootLayout);
                 _dragHoverHandIndex = -1;
                 _dragHoverIsWar = false;
+                CacheDragHitTestBounds();
 
                 DragGhostImage.Source = chipImage.Source;
                 DragGhostImage.TranslationX = _dragGhostOrigin.X;
@@ -792,6 +799,32 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
+    /// Snapshots every hand slot's current absolute Border/WarBorder bounds
+    /// into _dragHitTestBounds. Called once per drag (GestureStatus.Started)
+    /// since this geometry doesn't move while a drag is in progress, so
+    /// UpdateDragHoverHighlight can hit-test against the cached rects
+    /// instead of re-walking the visual tree on every "Running" tick.
+    /// </summary>
+    private void CacheDragHitTestBounds()
+    {
+        _dragHitTestBounds.Clear();
+
+        foreach (var view in _handSlotViews)
+        {
+            var mainBounds = new Rect(GetAbsolutePosition(view.Border, RootLayout), view.Border.Bounds.Size);
+
+            // War Blackjack only - WarBorder is hidden (and so never
+            // measured/positioned) for the other variants, so there's
+            // nothing meaningful to hit-test against then.
+            Rect? warBounds = view.WarBorder.IsVisible
+                ? new Rect(GetAbsolutePosition(view.WarBorder, RootLayout), view.WarBorder.Bounds.Size)
+                : null;
+
+            _dragHitTestBounds.Add((mainBounds, warBounds));
+        }
+    }
+
+    /// <summary>
     /// While a chip drag is in progress, highlights whichever hand slot (if
     /// any) the drag ghost's current center point is over - the custom-drag
     /// equivalent of the old DropGestureRecognizer's DragOver highlight.
@@ -811,10 +844,9 @@ public partial class MainPage : ContentPage
 
         var newHoverIndex = -1;
         var newHoverIsWar = false;
-        for (var i = 0; i < _handSlotViews.Count; i++)
+        for (var i = 0; i < _dragHitTestBounds.Count; i++)
         {
-            var view = _handSlotViews[i];
-            var mainBounds = new Rect(GetAbsolutePosition(view.Border, RootLayout), view.Border.Bounds.Size);
+            var (mainBounds, warBounds) = _dragHitTestBounds[i];
             if (mainBounds.Contains(ghostCenter))
             {
                 newHoverIndex = i;
@@ -822,21 +854,14 @@ public partial class MainPage : ContentPage
                 break;
             }
 
-            // War Blackjack only - WarBorder is hidden (and so never
-            // measured/positioned) for the other variants, so there's
-            // nothing meaningful to hit-test against then.
-            if (!view.WarBorder.IsVisible)
+            if (warBounds is not { } warBoundsValue || !warBoundsValue.Contains(ghostCenter))
             {
                 continue;
             }
 
-            var warBounds = new Rect(GetAbsolutePosition(view.WarBorder, RootLayout), view.WarBorder.Bounds.Size);
-            if (warBounds.Contains(ghostCenter))
-            {
-                newHoverIndex = i;
-                newHoverIsWar = true;
-                break;
-            }
+            newHoverIndex = i;
+            newHoverIsWar = true;
+            break;
         }
 
         if (newHoverIndex == _dragHoverHandIndex && newHoverIsWar == _dragHoverIsWar)
@@ -1442,8 +1467,15 @@ public partial class MainPage : ContentPage
         cardImage.Opacity = 0;
 
         // Let MAUI finish a layout pass so the card actually has real
-        // Bounds to read before measuring positions off of it.
-        await Task.Yield();
+        // Bounds to read before measuring positions off of it. A single
+        // yield isn't reliably enough for a native measure/arrange pass
+        // to complete, so poll a few frames (bounded, so a card that
+        // genuinely never gets laid out still animates instead of
+        // hanging) until Bounds actually has real content.
+        for (var attempt = 0; attempt < MaxLayoutWaitAttempts && cardImage.Bounds.IsEmpty; attempt++)
+        {
+            await Task.Yield();
+        }
 
         var shoePosition = GetPositionOnPage(ShoeImage);
         var cardPosition = GetPositionOnPage(cardImage);
