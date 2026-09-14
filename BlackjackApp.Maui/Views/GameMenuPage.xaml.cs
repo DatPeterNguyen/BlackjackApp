@@ -184,7 +184,7 @@ public partial class GameMenuPage : ContentPage
 
     private void RefreshVariantSummary() => VariantSummaryLabel.Text = $"Currently playing: {_currentVariant.Name}";
 
-    /// <summary>Start menu only (item 13) - reloads the saved balance/stats and refreshes the record/lifetime-profit/biggest-win-loss labels from them.</summary>
+    /// <summary>Start menu only (item 13) - reloads the saved balance/stats and refreshes the record/lifetime-profit/period-profit/biggest-win-loss labels from them.</summary>
     private void RefreshStatsDisplay()
     {
         var stats = GameProgressStorage.LoadStats();
@@ -193,21 +193,36 @@ public partial class GameMenuPage : ContentPage
 
         RecordLabel.Text = $"Record: {stats.Wins}W - {stats.Losses}L - {stats.Pushes}P";
 
-        NetProfitLabel.Text = stats.NetProfit switch
-        {
-            > 0 => $"Lifetime: +${stats.NetProfit:N0}",
-            < 0 => $"Lifetime: -${-stats.NetProfit:N0}",
-            _ => "Lifetime: $0",
-        };
-        NetProfitLabel.TextColor = stats.NetProfit switch
-        {
-            > 0 => Color.FromArgb("#4CAF50"),
-            < 0 => Color.FromArgb("#FF6B6B"),
-            _ => Color.FromArgb("#8FBFA9"),
-        };
+        NetProfitLabel.Text = FormatSignedNet("Lifetime", stats.NetProfit);
+        NetProfitLabel.TextColor = ColorForNet(stats.NetProfit);
+
+        WeeklyNetProfitLabel.Text = FormatSignedNet("Week", stats.WeeklyNetProfit);
+        WeeklyNetProfitLabel.TextColor = ColorForNet(stats.WeeklyNetProfit);
+
+        MonthlyNetProfitLabel.Text = FormatSignedNet("Month", stats.MonthlyNetProfit);
+        MonthlyNetProfitLabel.TextColor = ColorForNet(stats.MonthlyNetProfit);
+
+        YearToDateNetProfitLabel.Text = FormatSignedNet("YTD", stats.YearToDateNetProfit);
+        YearToDateNetProfitLabel.TextColor = ColorForNet(stats.YearToDateNetProfit);
 
         BiggestWinLossLabel.Text = $"Biggest win: ${stats.BiggestWin:N0}  |  Biggest loss: ${stats.BiggestLoss:N0}";
     }
+
+    /// <summary>Formats a labeled net profit/loss figure as "Label: +$N" / "Label: -$N" / "Label: $0" - shared by the lifetime and every period figure in RefreshStatsDisplay so they read identically.</summary>
+    private static string FormatSignedNet(string label, decimal net) => net switch
+    {
+        > 0 => $"{label}: +${net:N0}",
+        < 0 => $"{label}: -${-net:N0}",
+        _ => $"{label}: $0",
+    };
+
+    /// <summary>Green for a positive net, red for negative, muted green-grey for exactly zero - shared by the lifetime and every period figure in RefreshStatsDisplay.</summary>
+    private static Color ColorForNet(decimal net) => net switch
+    {
+        > 0 => Color.FromArgb("#4CAF50"),
+        < 0 => Color.FromArgb("#FF6B6B"),
+        _ => Color.FromArgb("#8FBFA9"),
+    };
 
     /// <summary>
     /// Start menu only: opens RulesPage in mode-picker mode - shows every

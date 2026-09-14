@@ -32,6 +32,14 @@
                         <Label x:Name="MenuBalanceLabel" Text="Balance: $1,000" TextColor="#FFD700" FontSize="17" FontAttributes="Bold" HorizontalOptions="Center"/>
                         <Label x:Name="RecordLabel" Text="Record: 0W - 0L - 0P" TextColor="White" FontSize="13" HorizontalOptions="Center"/>
                         <Label x:Name="NetProfitLabel" Text="Lifetime: $0" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center"/>
+
+                        <!-- Net win/loss broken out by period, on top of the lifetime figure above - see GameStats.WeeklyNetProfit/MonthlyNetProfit/YearToDateNetProfit and RefreshStatsDisplay. -->
+                        <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
+                            <Label x:Name="WeeklyNetProfitLabel" Text="Week: $0" FontSize="11" HorizontalOptions="Center"/>
+                            <Label x:Name="MonthlyNetProfitLabel" Text="Month: $0" FontSize="11" HorizontalOptions="Center"/>
+                            <Label x:Name="YearToDateNetProfitLabel" Text="YTD: $0" FontSize="11" HorizontalOptions="Center"/>
+                        </HorizontalStackLayout>
+
                         <Label x:Name="BiggestWinLossLabel" Text="Biggest win: $0  |  Biggest loss: $0" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
                     </VerticalStackLayout>
                 </Border>

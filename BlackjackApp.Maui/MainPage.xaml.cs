@@ -2096,7 +2096,7 @@ public partial class MainPage : ContentPage
         // and everything gets saved right away so balance and stats survive
         // an app close between rounds.
         var totalNet = _wallet.Balance - _walletBalanceAtRoundStart;
-        _stats.RecordRoundNet(totalNet);
+        _stats.RecordRoundNet(totalNet, DateOnly.FromDateTime(DateTime.Now));
         GameProgressStorage.Save(_wallet, _stats);
 
         if (_variant is WarBlackjackVariant)

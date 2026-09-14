@@ -32,6 +32,12 @@ public static class GameProgressStorage
     private const string NetProfitKey = "progress_net_profit";
     private const string BiggestWinKey = "progress_biggest_win";
     private const string BiggestLossKey = "progress_biggest_loss";
+    private const string WeeklyNetProfitKey = "progress_weekly_net_profit";
+    private const string WeekAnchorKey = "progress_week_anchor";
+    private const string MonthlyNetProfitKey = "progress_monthly_net_profit";
+    private const string MonthAnchorKey = "progress_month_anchor";
+    private const string YearToDateNetProfitKey = "progress_ytd_net_profit";
+    private const string YearAnchorKey = "progress_year_anchor";
     private const string LastCheckInKey = "progress_last_check_in";
     private const string CheckInStreakDayKey = "progress_check_in_streak_day";
     private const string InProgressRoundKey = "progress_in_progress_round_json";
@@ -53,7 +59,23 @@ public static class GameProgressStorage
         pushes: Preferences.Default.Get(PushesKey, 0),
         netProfit: (decimal)Preferences.Default.Get(NetProfitKey, 0.0),
         biggestWin: (decimal)Preferences.Default.Get(BiggestWinKey, 0.0),
-        biggestLoss: (decimal)Preferences.Default.Get(BiggestLossKey, 0.0));
+        biggestLoss: (decimal)Preferences.Default.Get(BiggestLossKey, 0.0),
+        weeklyNetProfit: (decimal)Preferences.Default.Get(WeeklyNetProfitKey, 0.0),
+        weekAnchor: LoadDateOrDefault(WeekAnchorKey),
+        monthlyNetProfit: (decimal)Preferences.Default.Get(MonthlyNetProfitKey, 0.0),
+        monthAnchor: LoadDateOrDefault(MonthAnchorKey),
+        yearToDateNetProfit: (decimal)Preferences.Default.Get(YearToDateNetProfitKey, 0.0),
+        yearAnchor: LoadDateOrDefault(YearAnchorKey));
+
+    /// <summary>Reads back a DateOnly stored the same way LoadLastCheckIn reads LastCheckInKey - default(DateOnly) (0001-01-01) if it was never saved, which GameStats treats as "no period recorded yet" and rolls over on the very next round.</summary>
+    private static DateOnly LoadDateOrDefault(string key)
+    {
+        var stored = Preferences.Default.Get(key, string.Empty);
+
+        return DateOnly.TryParseExact(stored, DateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date
+            : default;
+    }
 
     /// <summary>The calendar date of the player's most recent check-in claim, or null if they've never claimed one.</summary>
     public static DateOnly? LoadLastCheckIn()
@@ -92,6 +114,12 @@ public static class GameProgressStorage
         Preferences.Default.Set(NetProfitKey, (double)stats.NetProfit);
         Preferences.Default.Set(BiggestWinKey, (double)stats.BiggestWin);
         Preferences.Default.Set(BiggestLossKey, (double)stats.BiggestLoss);
+        Preferences.Default.Set(WeeklyNetProfitKey, (double)stats.WeeklyNetProfit);
+        Preferences.Default.Set(WeekAnchorKey, stats.WeekAnchor.ToString(DateFormat, CultureInfo.InvariantCulture));
+        Preferences.Default.Set(MonthlyNetProfitKey, (double)stats.MonthlyNetProfit);
+        Preferences.Default.Set(MonthAnchorKey, stats.MonthAnchor.ToString(DateFormat, CultureInfo.InvariantCulture));
+        Preferences.Default.Set(YearToDateNetProfitKey, (double)stats.YearToDateNetProfit);
+        Preferences.Default.Set(YearAnchorKey, stats.YearAnchor.ToString(DateFormat, CultureInfo.InvariantCulture));
     }
 
     /// <summary>
@@ -110,6 +138,12 @@ public static class GameProgressStorage
         Preferences.Default.Remove(NetProfitKey);
         Preferences.Default.Remove(BiggestWinKey);
         Preferences.Default.Remove(BiggestLossKey);
+        Preferences.Default.Remove(WeeklyNetProfitKey);
+        Preferences.Default.Remove(WeekAnchorKey);
+        Preferences.Default.Remove(MonthlyNetProfitKey);
+        Preferences.Default.Remove(MonthAnchorKey);
+        Preferences.Default.Remove(YearToDateNetProfitKey);
+        Preferences.Default.Remove(YearAnchorKey);
         Preferences.Default.Remove(CheckInStreakDayKey);
         ClearInProgressRound();
     }
