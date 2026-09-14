@@ -166,6 +166,9 @@ public partial class MainPage : ContentPage
     /// <summary>Cap on how many layout-yield attempts AnimateCardFromShoe will wait through for a just-added card's Bounds to become non-empty before giving up and animating with whatever it has - a single Task.Yield isn't reliably enough for a native measure/arrange pass to finish, especially inside nested layouts, so this polls a few frames instead of guessing wrong on some fraction of dealt cards.</summary>
     private const int MaxLayoutWaitAttempts = 10;
 
+    /// <summary>Half the duration of the dealer's hole-card flip (see FlipDealerHoleCardFaceUp) - the card narrows to a sliver over this long, then widens back out over the same time again with the new face showing.</summary>
+    private const uint CardFlipHalfDurationMs = 130;
+
     /// <summary>How long a finished round's cards stay on the table before they automatically fly off to the discard pile.</summary>
     private static readonly TimeSpan TableHoldBeforeDiscard = TimeSpan.FromSeconds(5);
 
@@ -2040,7 +2043,9 @@ public partial class MainPage : ContentPage
             // Every hand already busted - the dealer doesn't draw any
             // further cards, but the hole card still needs to be flipped
             // face-up so the final hand is visible.
-            RenderDealerHand(hideHoleCard: false);
+            RenderDealerHand(hideHoleCard: true);
+            await FlipDealerHoleCardFaceUp();
+            UpdateDealerValueLabel(hideHoleCard: false);
         }
 
         foreach (var slot in _hands)
@@ -2304,8 +2309,7 @@ public partial class MainPage : ContentPage
     /// <summary>
     /// Reveals the dealer's final hand the way a real dealer plays it out,
     /// instead of the whole thing just appearing at once: first flips the
-    /// hole card face-up (MAUI has no built-in flip animation, so this is a
-    /// quick redraw rather than an actual card-flip), then - for any
+    /// hole card face-up (see FlipDealerHoleCardFaceUp), then - for any
     /// further cards the dealer's play actually drew past that - animates
     /// each one flying in from the shoe, one at a time, updating the value
     /// readout as each lands.
@@ -2315,7 +2319,16 @@ public partial class MainPage : ContentPage
         DealerCardsLayout.Children.Clear();
         for (var i = 0; i < dealerCardsBeforePlay; i++)
         {
-            DealerCardsLayout.Children.Add(CreateCardImage(CardImageFile(_dealerHand.Cards[i]), 130));
+            var showFaceDown = i == 1;
+            var imageFile = showFaceDown ? "back_red.png" : CardImageFile(_dealerHand.Cards[i]);
+            DealerCardsLayout.Children.Add(CreateCardImage(imageFile, 130));
+        }
+
+        UpdateDealerValueLabel(hideHoleCard: true);
+
+        if (dealerCardsBeforePlay > 1)
+        {
+            await FlipDealerHoleCardFaceUp();
         }
 
         UpdateDealerValueLabel(hideHoleCard: false);
@@ -2327,6 +2340,47 @@ public partial class MainPage : ContentPage
             UpdateDealerValueLabel(hideHoleCard: false);
             await Task.Delay(CardDealStaggerMs);
         }
+    }
+
+    /// <summary>
+    /// Flips the dealer's already-on-table hole card (DealerCardsLayout's
+    /// second card) from face-down to face-up. MAUI has no built-in card
+    /// flip, so this fakes one with a horizontal scale: narrow the card to
+    /// a sliver on its X axis, swap its image source once it's edge-on
+    /// (where the swap is invisible), then widen it back out - reading as
+    /// the card turning over rather than an instant image swap.
+    /// </summary>
+    private async Task FlipDealerHoleCardFaceUp()
+    {
+        if (DealerCardsLayout.Children.Count < 2 || DealerCardsLayout.Children[1] is not Image holeCardImage)
+        {
+            return;
+        }
+
+        await ScaleXTo(holeCardImage, 0, CardFlipHalfDurationMs, Easing.CubicIn);
+        holeCardImage.Source = ImageSource.FromFile(CardImageFile(_dealerHand.Cards[1]));
+        await ScaleXTo(holeCardImage, 1, CardFlipHalfDurationMs, Easing.CubicOut);
+    }
+
+    /// <summary>
+    /// Animates a view's ScaleX to the given value. MAUI's built-in
+    /// animation extensions (FadeToAsync/TranslateToAsync/RotateTo etc. -
+    /// see elsewhere in this file) don't include a ScaleX-only variant, so
+    /// this drives the ScaleX property directly through the same
+    /// VisualElement.Animate primitive those extensions are built on.
+    /// </summary>
+    private static Task ScaleXTo(VisualElement view, double toValue, uint length, Easing easing)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        view.Animate(
+            "FlipScaleX",
+            v => view.ScaleX = v,
+            view.ScaleX,
+            toValue,
+            length: length,
+            easing: easing,
+            finished: (_, cancelled) => tcs.TrySetResult(!cancelled));
+        return tcs.Task;
     }
 
     private static string DescribeOutcome(RoundOutcome outcome, decimal payout) => outcome switch

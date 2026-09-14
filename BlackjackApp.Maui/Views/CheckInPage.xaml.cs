@@ -114,17 +114,21 @@ public partial class CheckInPage : ContentPage
         // where it actually landed rather than vanishing on payout.
         WheelContainer.IsVisible = _status.Kind == CheckInRewardKind.WheelSpin;
 
+        var isActionableWheelDay = _status.CanClaim && _status.Kind == CheckInRewardKind.WheelSpin;
+        WheelHintLabel.IsVisible = isActionableWheelDay;
+
         if (_status.CanClaim)
         {
             StreakSummaryLabel.Text = _status.StreakWasBroken
                 ? "Your streak lapsed, so you're starting over at day 1 of 7."
                 : $"Day {_status.StreakDay} of {DailyCheckIn.StreakLength}.";
 
-            ClaimButton.IsVisible = true;
+            // Day 7 spins by tapping the wheel itself (see
+            // WheelContainer_OnTapped) rather than a button, so the Claim
+            // button only ever shows for the flat days 1-6 reward.
+            ClaimButton.IsVisible = !isActionableWheelDay;
             ClaimButton.IsEnabled = true;
-            ClaimButton.Text = _status.Kind == CheckInRewardKind.WheelSpin
-                ? "Spin the Wheel"
-                : $"Claim ${DailyCheckIn.DailyReward:N0}";
+            ClaimButton.Text = $"Claim ${DailyCheckIn.DailyReward:N0}";
 
             return;
         }
@@ -136,7 +140,7 @@ public partial class CheckInPage : ContentPage
         ClaimButton.IsVisible = false;
     }
 
-    private async void ClaimButton_OnClicked(object? sender, EventArgs e)
+    private void ClaimButton_OnClicked(object? sender, EventArgs e)
     {
         if (_busy || !_status.CanClaim)
         {
@@ -148,14 +152,31 @@ public partial class CheckInPage : ContentPage
 
         try
         {
-            if (_status.Kind == CheckInRewardKind.WheelSpin)
-            {
-                await SpinAndPayAsync();
-            }
-            else
-            {
-                PayOut(DailyCheckIn.DailyReward, $"+${DailyCheckIn.DailyReward:N0} added to your balance.");
-            }
+            PayOut(DailyCheckIn.DailyReward, $"+${DailyCheckIn.DailyReward:N0} added to your balance.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Day 7 only - tapping anywhere on the wheel (see the Grid's
+    /// TapGestureRecognizer in CheckInPage.xaml) spins it, replacing the old
+    /// separate "Spin the Wheel" button.
+    /// </summary>
+    private async void WheelContainer_OnTapped(object? sender, TappedEventArgs e)
+    {
+        if (_busy || !_status.CanClaim || _status.Kind != CheckInRewardKind.WheelSpin)
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            await SpinAndPayAsync();
         }
         finally
         {

@@ -36,11 +36,19 @@
             -->
             <Grid x:Name="WheelContainer" IsVisible="False" HeightRequest="250" WidthRequest="250"
                   HorizontalOptions="Center" Margin="0,4,0,0">
+                <Grid.GestureRecognizers>
+                    <!-- Tapping anywhere on the wheel spins it - see WheelContainer_OnTapped. -->
+                    <TapGestureRecognizer Tapped="WheelContainer_OnTapped"/>
+                </Grid.GestureRecognizers>
                 <GraphicsView x:Name="WheelView" HeightRequest="240" WidthRequest="240"
                               HorizontalOptions="Center" VerticalOptions="Center"/>
                 <Polygon Points="0,0 24,0 12,20" Fill="#FFD700" Stroke="#0B3D2E" StrokeThickness="1"
                          HorizontalOptions="Center" VerticalOptions="Start"/>
             </Grid>
+
+            <!-- Shown instead of a Claim button on an actionable day-7 - see RefreshForStatus. -->
+            <Label x:Name="WheelHintLabel" Text="Tap the wheel to spin!" TextColor="#8FBFA9" FontSize="13"
+                   HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
 
             <Label x:Name="OutcomeLabel" Text="" TextColor="#FFD700" FontSize="17" FontAttributes="Bold"
                    HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
