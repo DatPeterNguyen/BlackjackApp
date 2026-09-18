@@ -15,7 +15,7 @@ public class ChipWallet
     public const decimal TableMaximum = 10_000m;
 
     /// <summary>The chip denominations available at the table, smallest to largest.</summary>
-    public static readonly decimal[] Denominations = [1m, 5m, 10m, 25m, 100m, 1_000m, 10_000m];
+    public static readonly decimal[] Denominations = [1m, 5m, 10m, 25m, 50m, 100m, 500m, 1_000m, 5_000m, 10_000m];
 
     public decimal Balance { get; private set; }
 

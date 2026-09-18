@@ -938,7 +938,7 @@ public partial class MainPage : ContentPage
     /// <summary>No hand slot was under the release point - glides the ghost smoothly back to where the chip started, then clears it, so a drag that misses reads as "put back down" rather than just vanishing.</summary>
     private async Task ReturnDragGhostHomeAsync()
     {
-        await DragGhostImage.TranslateTo(_dragGhostOrigin.X, _dragGhostOrigin.Y, 180, Easing.CubicOut);
+        await DragGhostImage.TranslateToAsync(_dragGhostOrigin.X, _dragGhostOrigin.Y, 180, Easing.CubicOut);
         await HideDragGhostAsync();
     }
 
@@ -1582,7 +1582,7 @@ public partial class MainPage : ContentPage
             if (round < _dealerHand.Cards.Count)
             {
                 var showFaceDown = hideDealerHoleCard && round == 1;
-                var imageFile = showFaceDown ? "back_red.png" : CardImageFile(_dealerHand.Cards[round]);
+                var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[round]);
                 await DealAnimatedCard(DealerCardsLayout, imageFile, 130);
                 await Task.Delay(CardDealStaggerMs);
             }
@@ -1899,7 +1899,7 @@ public partial class MainPage : ContentPage
             await Task.Delay(CardDealStaggerMs);
         }
 
-        await DealAnimatedCard(DealerCardsLayout, "back_red.png", 130); // the dealer's second card stays hidden as the hole card
+        await DealAnimatedCard(DealerCardsLayout, CardBackFile, 130); // the dealer's second card stays hidden as the hole card
         UpdateDealerValueLabel(hideHoleCard: true);
     }
 
@@ -2470,7 +2470,7 @@ public partial class MainPage : ContentPage
         for (var i = 0; i < dealerCardsBeforePlay; i++)
         {
             var showFaceDown = i == 1;
-            var imageFile = showFaceDown ? "back_red.png" : CardImageFile(_dealerHand.Cards[i]);
+            var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[i]);
             DealerCardsLayout.Children.Add(CreateCardImage(imageFile, 130));
         }
 
@@ -2609,7 +2609,7 @@ public partial class MainPage : ContentPage
         for (var i = 0; i < _dealerHand.Cards.Count; i++)
         {
             var showFaceDown = hideHoleCard && i == 1;
-            var imageFile = showFaceDown ? "back_red.png" : CardImageFile(_dealerHand.Cards[i]);
+            var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[i]);
             DealerCardsLayout.Children.Add(CreateCardImage(imageFile, 130));
         }
 
@@ -2694,6 +2694,9 @@ public partial class MainPage : ContentPage
 
     private void UpdateVariantLabel() => VariantLabel.Text = _variant.Name;
 
+    /// <summary>The face-down card art for the current variant - War Blackjack gets the kit's blue back to match its blue-accented table, everyone else keeps the red back.</summary>
+    private string CardBackFile => _variant is WarBlackjackVariant ? "back_blue.png" : "back_red.png";
+
     /// <summary>
     /// Swaps the table artwork to match the design doc's per-variant look.
     /// The kit ships exactly three felts and three backdrops, so each
@@ -2723,6 +2726,12 @@ public partial class MainPage : ContentPage
         var accent = Color.FromArgb(panelAccent);
         DealerAreaBorder.Stroke = accent;
         PlayerAreaBorder.Stroke = accent;
+
+        // The shoe/discard piles show the same face-down back the dealer's
+        // hole card uses, so a variant switch doesn't leave them showing
+        // the wrong colour back next to a re-themed table.
+        ShoeImage.Source = ImageSource.FromFile(CardBackFile);
+        DiscardImage.Source = ImageSource.FromFile(CardBackFile);
     }
 
     private static Image CreateCardImage(string imageFile, double height) => new()

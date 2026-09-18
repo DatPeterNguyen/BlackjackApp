@@ -187,13 +187,31 @@
                                 <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                             </Image.GestureRecognizers>
                         </Image>
+                        <Image Source="chip_50.png" ClassId="50" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
                         <Image Source="chip_100.png" ClassId="100" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
                             <Image.GestureRecognizers>
                                 <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                                 <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
                             </Image.GestureRecognizers>
                         </Image>
+                        <Image Source="chip_500.png" ClassId="500" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
                         <Image Source="chip_1000.png" ClassId="1000" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Image Source="chip_5000.png" ClassId="5000" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
                             <Image.GestureRecognizers>
                                 <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
                                 <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>

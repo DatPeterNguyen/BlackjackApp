@@ -94,6 +94,9 @@ public class ChipWalletTests
     [Test]
     public void Denominations_MatchTheDesignDocsChipSet()
     {
-        Assert.That(ChipWallet.Denominations, Is.EqualTo(new[] { 1m, 5m, 10m, 25m, 100m, 1_000m, 10_000m }));
+        // Expanded to the kit's full ten-denomination chip set (50/500/5000
+        // added alongside the chip tray UI) - see BlackjackApp.Maui
+        // MainPage.xaml's chip tray for the matching set of tappable chips.
+        Assert.That(ChipWallet.Denominations, Is.EqualTo(new[] { 1m, 5m, 10m, 25m, 50m, 100m, 500m, 1_000m, 5_000m, 10_000m }));
     }
 }
