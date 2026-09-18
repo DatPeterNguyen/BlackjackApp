@@ -204,7 +204,7 @@ public partial class CheckInPage : ContentPage
         var landing = 360.0 * WheelSpins - (wedge * sweep + sweep / 2.0);
 
         WheelView.Rotation = 0;
-        await WheelView.RotateTo(landing, SpinDurationMs, Easing.CubicOut);
+        await WheelView.RotateToAsync(landing, SpinDurationMs, Easing.CubicOut);
 
         var prize = DailyCheckIn.PrizeAt(wedge);
         PayOut(prize, $"The wheel landed on ${prize:N0}!");

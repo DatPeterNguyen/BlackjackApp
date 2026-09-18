@@ -240,7 +240,7 @@ public partial class GameMenuPage : ContentPage
         // save to lose.
         if (GameProgressStorage.HasInProgressRound())
         {
-            var confirmed = await DisplayAlert(
+            var confirmed = await DisplayAlertAsync(
                 "Start a New Game?",
                 "You have a saved game in progress. Starting a new one abandons it - any money on the table there will be lost. Use Load Game instead if you want to finish it first.",
                 "Start New Game",
@@ -337,7 +337,7 @@ public partial class GameMenuPage : ContentPage
             ? "Your current hand will be saved so you can pick it up later with Load Game."
             : "This returns you to the start menu.";
 
-        var confirmed = await DisplayAlert("Exit to Menu?", message, "Exit to Menu", "Cancel");
+        var confirmed = await DisplayAlertAsync("Exit to Menu?", message, "Exit to Menu", "Cancel");
 
         if (!confirmed)
         {
@@ -367,7 +367,7 @@ public partial class GameMenuPage : ContentPage
     /// <summary>Start menu only (item 13) - wipes the saved balance and lifetime stats back to a fresh start (see GameProgressStorage.ResetAll), then refreshes the display to show it took.</summary>
     private async void ResetProgressButton_OnClicked(object? sender, EventArgs e)
     {
-        var confirmed = await DisplayAlert(
+        var confirmed = await DisplayAlertAsync(
             "Reset Progress?",
             $"This resets your balance back to ${GameProgressStorage.DefaultStartingBalance:N0} and clears your win/loss record. This can't be undone.",
             "Reset",
