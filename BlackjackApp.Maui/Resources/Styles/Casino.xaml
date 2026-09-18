@@ -26,18 +26,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
     <!-- ===== Palette (sampled from the kit) ===== -->
-    <Color x:Key="FeltLight">#6BA800</Color>
-    <Color x:Key="FeltMid">#5A9300</Color>
-    <Color x:Key="FeltDark">#3C6B00</Color>
-    <Color x:Key="FeltDeep">#2A4D00</Color>
-    <Color x:Key="RailOrange">#D2560F</Color>
-    <Color x:Key="RailOrangeLight">#F07B1E</Color>
-
     <Color x:Key="ReadoutFill">#FFFFFF</Color>
     <Color x:Key="ReadoutBorder">#4D0000</Color>
-    <Color x:Key="ReadoutText">#4D0000</Color>
+    <Color x:Key="ReadoutInk">#4D0000</Color>
 
-    <Color x:Key="BadgeNavy">#0C1F2A</Color>
     <Color x:Key="PanelInk">#112401</Color>
     <Color x:Key="PanelEdge">#BD450E</Color>
     <Color x:Key="CasinoGold">#FFC400</Color>
@@ -55,18 +47,6 @@
     <Color x:Key="BlueBottom">#036EC5</Color>
 
     <!-- ===== Brushes ===== -->
-    <!--
-        The felt. A radial rather than a linear gradient because the kit's
-        table art is lit from a single point above the middle of the table,
-        and a linear ramp reads as a flat wall instead of a lit surface.
-    -->
-    <RadialGradientBrush x:Key="FeltBrush" Center="0.5,0.35" Radius="0.85">
-        <GradientStop Color="{StaticResource FeltLight}" Offset="0.0" />
-        <GradientStop Color="{StaticResource FeltMid}" Offset="0.45" />
-        <GradientStop Color="{StaticResource FeltDark}" Offset="0.85" />
-        <GradientStop Color="{StaticResource FeltDeep}" Offset="1.0" />
-    </RadialGradientBrush>
-
     <LinearGradientBrush x:Key="GreenButtonBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="{StaticResource GreenTop}" Offset="0.0" />
         <GradientStop Color="{StaticResource GreenBottom}" Offset="1.0" />
@@ -174,7 +154,7 @@
     </Style>
 
     <Style x:Key="ReadoutText" TargetType="Label">
-        <Setter Property="TextColor" Value="{StaticResource ReadoutText}" />
+        <Setter Property="TextColor" Value="{StaticResource ReadoutInk}" />
         <Setter Property="FontAttributes" Value="Bold" />
     </Style>
 
@@ -195,22 +175,6 @@
         <Setter Property="StrokeThickness" Value="3" />
         <Setter Property="Padding" Value="12" />
         <Setter Property="StrokeShape" Value="RoundRectangle 14" />
-    </Style>
-
-    <!-- The red hand-total badge that sits on the corner of each hand in
-         the kit's table mock-up (button_sq.png with a number on it). -->
-    <Style x:Key="TotalBadge" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource RedButtonBrush}" />
-        <Setter Property="Stroke" Value="#8B0000" />
-        <Setter Property="StrokeThickness" Value="1" />
-        <Setter Property="Padding" Value="8,3" />
-        <Setter Property="StrokeShape" Value="RoundRectangle 7" />
-    </Style>
-
-    <Style x:Key="TotalBadgeText" TargetType="Label">
-        <Setter Property="TextColor" Value="White" />
-        <Setter Property="FontAttributes" Value="Bold" />
-        <Setter Property="FontSize" Value="16" />
     </Style>
 
     <!-- Headings over felt need a dark edge to stay legible against the
