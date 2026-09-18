@@ -76,7 +76,7 @@ public partial class CheckInPage : ContentPage
             {
                 Text = $"Day {day}",
                 FontSize = 9,
-                TextColor = isClaimed ? Color.FromArgb("#0B3D2E") : Color.FromArgb("#8FBFA9"),
+                TextColor = isClaimed ? Color.FromArgb("#2A4D00") : Color.FromArgb("#E6F3C8"),
                 HorizontalOptions = LayoutOptions.Center,
             };
 
@@ -86,8 +86,8 @@ public partial class CheckInPage : ContentPage
                 FontSize = isWheelDay ? 11 : 12,
                 FontAttributes = FontAttributes.Bold,
                 TextColor = isClaimed
-                    ? Color.FromArgb("#0B3D2E")
-                    : isWheelDay ? Color.FromArgb("#FFD700") : Colors.White,
+                    ? Color.FromArgb("#2A4D00")
+                    : isWheelDay ? Color.FromArgb("#FFC400") : Colors.White,
                 HorizontalOptions = LayoutOptions.Center,
             };
 
@@ -96,9 +96,9 @@ public partial class CheckInPage : ContentPage
                 WidthRequest = 44,
                 Padding = new Thickness(2, 6),
                 StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Stroke = isPending ? Color.FromArgb("#FFD700") : Color.FromArgb("#3A6B57"),
+                Stroke = isPending ? Color.FromArgb("#FFC400") : Color.FromArgb("#6F7D55"),
                 StrokeThickness = isPending ? 3 : 1,
-                BackgroundColor = isClaimed ? Color.FromArgb("#C89B2C") : Color.FromArgb("#0E4433"),
+                BackgroundColor = isClaimed ? Color.FromArgb("#D9A300") : Color.FromArgb("#59000000"),
                 Content = new VerticalStackLayout
                 {
                     Spacing = 1,
@@ -262,11 +262,11 @@ public partial class CheckInPage : ContentPage
 
         private static readonly Color[] WedgeColors =
         [
-            Color.FromArgb("#1B7A4D"),
-            Color.FromArgb("#11593A"),
-            Color.FromArgb("#1B7A4D"),
-            Color.FromArgb("#11593A"),
-            Color.FromArgb("#C89B2C"),
+            Color.FromArgb("#4F8400"),
+            Color.FromArgb("#2F5500"),
+            Color.FromArgb("#4F8400"),
+            Color.FromArgb("#2F5500"),
+            Color.FromArgb("#D9A300"),
         ];
 
         public void Draw(ICanvas canvas, RectF dirtyRect)
@@ -294,7 +294,7 @@ public partial class CheckInPage : ContentPage
                 canvas.FillColor = WedgeColors[i % WedgeColors.Length];
                 canvas.FillPath(path);
 
-                canvas.StrokeColor = Color.FromArgb("#0B3D2E");
+                canvas.StrokeColor = Color.FromArgb("#2A4D00");
                 canvas.StrokeSize = 2f;
                 canvas.DrawPath(path);
             }
@@ -319,9 +319,9 @@ public partial class CheckInPage : ContentPage
                     Microsoft.Maui.Graphics.VerticalAlignment.Center);
             }
 
-            canvas.FillColor = Color.FromArgb("#0B3D2E");
+            canvas.FillColor = Color.FromArgb("#2A4D00");
             canvas.FillCircle(cx, cy, 17f);
-            canvas.StrokeColor = Color.FromArgb("#FFD700");
+            canvas.StrokeColor = Color.FromArgb("#FFC400");
             canvas.StrokeSize = 3f;
             canvas.DrawCircle(cx, cy, 17f);
         }

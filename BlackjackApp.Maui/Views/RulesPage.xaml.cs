@@ -53,7 +53,7 @@ public partial class RulesPage : ContentPage
         foreach (var (name, border, titleLabel) in sections)
         {
             var isSelected = name == _selectedVariantName;
-            border.Stroke = isSelected ? Color.FromArgb("#FFD700") : Color.FromArgb("#3A6B57");
+            border.Stroke = isSelected ? Color.FromArgb("#FFC400") : Color.FromArgb("#6F7D55");
             border.StrokeThickness = isSelected ? 2 : 1;
             titleLabel.Text = isSelected ? $"{name} ({tag})" : name;
         }

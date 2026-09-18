@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="BlackjackApp.Maui.Views.CheckInPage"
              Title="Daily Reward"
-             BackgroundColor="#0B3D2E">
+             BackgroundColor="#2A4D00">
 
     <!--
         The daily check-in reward (item 14 on the polish list). Days 1-6 of a
@@ -18,47 +18,52 @@
         WheelDrawable in CheckInPage.xaml.cs) and spun by animating the
         GraphicsView's Rotation onto the winning wedge.
     -->
-    <ScrollView>
-        <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
-            <Label Text="Daily Reward" TextColor="White" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center"/>
-            <Label x:Name="StreakSummaryLabel" Text="" TextColor="#8FBFA9" FontSize="13"
-                   HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
+    <Grid>
+        <Image Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
+        <Image Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
 
-            <!-- The 7-day cycle at a glance - tiles built by BuildDayStrip. -->
-            <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                <HorizontalStackLayout x:Name="DayStripLayout" Spacing="6" HorizontalOptions="Center"/>
-            </ScrollView>
+        <ScrollView>
+            <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
+                <Label Text="Daily Reward" Style="{StaticResource FeltHeading}" FontSize="26" HorizontalOptions="Center"/>
+                <Label x:Name="StreakSummaryLabel" Text="" Style="{StaticResource FeltCaption}" FontSize="13"
+                       HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
 
-            <!--
-                Day 7 only. The GraphicsView draws the wheel and is what
-                actually rotates; the pointer sits on top of it, fixed, so
-                whichever wedge ends up under the pointer is the prize.
-            -->
-            <Grid x:Name="WheelContainer" IsVisible="False" HeightRequest="250" WidthRequest="250"
-                  HorizontalOptions="Center" Margin="0,4,0,0">
-                <Grid.GestureRecognizers>
-                    <!-- Tapping anywhere on the wheel spins it - see WheelContainer_OnTapped. -->
-                    <TapGestureRecognizer Tapped="WheelContainer_OnTapped"/>
-                </Grid.GestureRecognizers>
-                <GraphicsView x:Name="WheelView" HeightRequest="240" WidthRequest="240"
-                              HorizontalOptions="Center" VerticalOptions="Center"/>
-                <Polygon Points="0,0 24,0 12,20" Fill="#FFD700" Stroke="#0B3D2E" StrokeThickness="1"
-                         HorizontalOptions="Center" VerticalOptions="Start"/>
-            </Grid>
+                <!-- The 7-day cycle at a glance - tiles built by BuildDayStrip. -->
+                <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                    <HorizontalStackLayout x:Name="DayStripLayout" Spacing="6" HorizontalOptions="Center"/>
+                </ScrollView>
 
-            <!-- Shown instead of a Claim button on an actionable day-7 - see RefreshForStatus. -->
-            <Label x:Name="WheelHintLabel" Text="Tap the wheel to spin!" TextColor="#8FBFA9" FontSize="13"
-                   HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
+                <!--
+                    Day 7 only. The GraphicsView draws the wheel and is what
+                    actually rotates; the pointer sits on top of it, fixed, so
+                    whichever wedge ends up under the pointer is the prize.
+                -->
+                <Grid x:Name="WheelContainer" IsVisible="False" HeightRequest="250" WidthRequest="250"
+                      HorizontalOptions="Center" Margin="0,4,0,0">
+                    <Grid.GestureRecognizers>
+                        <!-- Tapping anywhere on the wheel spins it - see WheelContainer_OnTapped. -->
+                        <TapGestureRecognizer Tapped="WheelContainer_OnTapped"/>
+                    </Grid.GestureRecognizers>
+                    <GraphicsView x:Name="WheelView" HeightRequest="240" WidthRequest="240"
+                                  HorizontalOptions="Center" VerticalOptions="Center"/>
+                    <Polygon Points="0,0 24,0 12,20" Fill="#FFC400" Stroke="#3C1D00" StrokeThickness="1"
+                             HorizontalOptions="Center" VerticalOptions="Start"/>
+                </Grid>
 
-            <Label x:Name="OutcomeLabel" Text="" TextColor="#FFD700" FontSize="17" FontAttributes="Bold"
-                   HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
+                <!-- Shown instead of a Claim button on an actionable day-7 - see RefreshForStatus. -->
+                <Label x:Name="WheelHintLabel" Text="Tap the wheel to spin!" Style="{StaticResource FeltCaption}" FontSize="13"
+                       HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
 
-            <Button x:Name="ClaimButton" Text="Claim" HeightRequest="52" FontSize="17" FontAttributes="Bold"
-                    Margin="0,4,0,0" Clicked="ClaimButton_OnClicked"/>
-<!-- Debug builds only (see CheckInPage.xaml.cs) - jumps the saved streak to "day 6, claimed yesterday" so tapping Claim lands on today
-                 the real day-7 wheel, without waiting a week for it to come around naturally. Stays hidden and inert in Release. -->
-            <Button x:Name="DebugForceDayButton" Text="Debug: Force Day 7" HeightRequest="36" FontSize="12" IsVisible="False" Clicked="DebugForceDayButton_OnClicked"/>
-                        <Button x:Name="CloseButton" Text="Close" HeightRequest="44" Clicked="CloseButton_OnClicked"/>
-        </VerticalStackLayout>
-    </ScrollView>
+                <Label x:Name="OutcomeLabel" Text="" TextColor="#FFC400" FontSize="17" FontAttributes="Bold"
+                       HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
+
+                <Button x:Name="ClaimButton" Text="CLAIM" Style="{StaticResource GreenButton}" HeightRequest="54" FontSize="18"
+                        Margin="0,4,0,0" Clicked="ClaimButton_OnClicked"/>
+                <!-- Debug builds only (see CheckInPage.xaml.cs) - jumps the saved streak to "day 6, claimed yesterday" so tapping Claim lands on
+                     the real day-7 wheel, without waiting a week for it to come around naturally. Stays hidden and inert in Release. -->
+                <Button x:Name="DebugForceDayButton" Text="Debug: Force Day 7" Style="{StaticResource GoldButton}" HeightRequest="38" FontSize="12" IsVisible="False" Clicked="DebugForceDayButton_OnClicked"/>
+                <Button x:Name="CloseButton" Text="Close" Style="{StaticResource RedButton}" HeightRequest="46" Clicked="CloseButton_OnClicked"/>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

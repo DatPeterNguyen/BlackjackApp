@@ -221,7 +221,7 @@ public partial class GameMenuPage : ContentPage
     {
         > 0 => Color.FromArgb("#4CAF50"),
         < 0 => Color.FromArgb("#FF6B6B"),
-        _ => Color.FromArgb("#8FBFA9"),
+        _ => Color.FromArgb("#E6F3C8"),
     };
 
     /// <summary>

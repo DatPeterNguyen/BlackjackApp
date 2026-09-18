@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="BlackjackApp.Maui.Views.LeaderboardPage"
              Title="Leaderboard"
-             BackgroundColor="#0B3D2E">
+             BackgroundColor="#2A4D00">
 
     <!--
         Local-only leaderboard (start menu only - see GameMenuPage's
@@ -17,19 +17,24 @@
         Rows are built in code-behind since the count varies (currently
         always 1, but not forever).
     -->
-    <ScrollView>
-        <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
-            <Label Text="Leaderboard" TextColor="White" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center"/>
-            <Label Text="Highest balance ever reached" TextColor="#8FBFA9" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,4"/>
+    <Grid>
+        <Image Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
+        <Image Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
 
-            <!-- One row per leaderboard entry - see LeaderboardPage.xaml.cs BuildRows. Shown instead of this when there's nothing to rank yet. -->
-            <VerticalStackLayout x:Name="RowsLayout" Spacing="8"/>
+        <ScrollView>
+            <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
+                <Label Text="Leaderboard" Style="{StaticResource FeltHeading}" FontSize="26" HorizontalOptions="Center"/>
+                <Label Text="Highest balance ever reached" Style="{StaticResource FeltCaption}" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,4"/>
 
-            <!-- Shown instead of RowsLayout when the leaderboard is empty (a brand new player who hasn't finished a round yet). -->
-            <Label x:Name="EmptyLabel" Text="Play a round to set your first record." TextColor="#8FBFA9" FontSize="14"
-                   HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False" Margin="0,12,0,0"/>
+                <!-- One row per leaderboard entry - see LeaderboardPage.xaml.cs BuildRows. Shown instead of this when there's nothing to rank yet. -->
+                <VerticalStackLayout x:Name="RowsLayout" Spacing="8"/>
 
-            <Button x:Name="CloseButton" Text="Close" HeightRequest="44" Margin="0,10,0,0" Clicked="CloseButton_OnClicked"/>
-        </VerticalStackLayout>
-    </ScrollView>
+                <!-- Shown instead of RowsLayout when the leaderboard is empty (a brand new player who hasn't finished a round yet). -->
+                <Label x:Name="EmptyLabel" Text="Play a round to set your first record." Style="{StaticResource FeltCaption}" FontSize="14"
+                       HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False" Margin="0,12,0,0"/>
+
+                <Button x:Name="CloseButton" Text="Close" Style="{StaticResource RedButton}" HeightRequest="46" Margin="0,10,0,0" Clicked="CloseButton_OnClicked"/>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

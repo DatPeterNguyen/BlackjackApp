@@ -3,12 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="BlackjackApp.Maui.Views.GameMenuPage"
              Title="Menu"
-             BackgroundColor="#0B3D2E">
+             BackgroundColor="#2A4D00">
 
     <!--
         The game menu (item 4 on the polish list) - doubles as the app's
         start screen (see the parameterless constructor and AppShell.xaml)
-        AND the mid-game menu opened from MainPage's top-bar Menu button;
+        AND the mid-game menu opened from MainPage's top-bar gear button;
         code-behind toggles Play/Load Game/ExitToMenu/Close/the stats
         block/Reset Progress depending on which one this instance is (see
         GameMenuPage.xaml.cs). Rules/how-to-play content lives on
@@ -18,45 +18,56 @@
         separate pushed page, since it's just two numbers now (deck count,
         hand count) - the variant itself can only be chosen by starting a
         fresh game via Play.
+
+        Dressed with the same CraftPix table art as MainPage so the menu
+        reads as part of the same room rather than a settings screen the
+        game happens to be behind. The felt is always the green one here,
+        even mid-game in a red or gold variant - this is the house's own
+        screen, not a table.
     -->
     <Grid>
+        <Image Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
+        <Image Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
+
         <ScrollView>
-            <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
-                <Label x:Name="MenuTitleLabel" Text="Menu" TextColor="White" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center"/>
-                <Label x:Name="VariantSummaryLabel" Text="" TextColor="#8FBFA9" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,4"/>
+            <VerticalStackLayout Padding="24" Spacing="12" VerticalOptions="Center">
+                <Label x:Name="MenuTitleLabel" Text="Menu" Style="{StaticResource FeltHeading}" FontSize="27" HorizontalOptions="Center"/>
+                <Label x:Name="VariantSummaryLabel" Text="" Style="{StaticResource FeltCaption}" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,4"/>
 
                 <!-- Start menu only (item 13) - the player's lifetime win/loss/push record and profit tracking, loaded straight from GameProgressStorage. -->
-                <Border x:Name="StatsBorder" Stroke="#3A6B57" StrokeThickness="1" StrokeShape="RoundRectangle 8"
-                        BackgroundColor="#0E4433" Padding="12" Margin="0,0,0,6">
+                <Border x:Name="StatsBorder" Style="{StaticResource FeltPanel}" Padding="14" Margin="0,0,0,4">
                     <VerticalStackLayout Spacing="4">
-                        <Label x:Name="MenuBalanceLabel" Text="Balance: $1,000" TextColor="#FFD700" FontSize="17" FontAttributes="Bold" HorizontalOptions="Center"/>
+                        <HorizontalStackLayout Spacing="7" HorizontalOptions="Center">
+                            <Image Source="icon_coin.png" WidthRequest="20" HeightRequest="20" Aspect="AspectFit" VerticalOptions="Center"/>
+                            <Label x:Name="MenuBalanceLabel" Text="Balance: $1,000" TextColor="#FFC400" FontSize="17" FontAttributes="Bold" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
                         <Label x:Name="RecordLabel" Text="Record: 0W - 0L - 0P" TextColor="White" FontSize="13" HorizontalOptions="Center"/>
                         <Label x:Name="NetProfitLabel" Text="Lifetime: $0" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center"/>
 
-                        <!-- Net win/loss broken out by period, on top of the lifetime figure above - see GameStats.WeeklyNetProfit/MonthlyNetProfit/YearToDateNetProfit and RefreshStatsDisplay. -->
+                        <!-- Net win/loss broken out by period, on top of the lifetime figure above - see GameStats.WeeklyNetProfit/MonthlyNetProfit/YearToDateNetProfit and RefreshStatsDisplay. These four labels' colours are set per value in code (ColorForNet), so they deliberately carry no TextColor here. -->
                         <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
                             <Label x:Name="WeeklyNetProfitLabel" Text="Week: $0" FontSize="11" HorizontalOptions="Center"/>
                             <Label x:Name="MonthlyNetProfitLabel" Text="Month: $0" FontSize="11" HorizontalOptions="Center"/>
                             <Label x:Name="YearToDateNetProfitLabel" Text="YTD: $0" FontSize="11" HorizontalOptions="Center"/>
                         </HorizontalStackLayout>
 
-                        <Label x:Name="BiggestWinLossLabel" Text="Biggest win: $0  |  Biggest loss: $0" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
+                        <Label x:Name="BiggestWinLossLabel" Text="Biggest win: $0  |  Biggest loss: $0" Style="{StaticResource FeltCaption}" FontSize="11" HorizontalOptions="Center"/>
                     </VerticalStackLayout>
                 </Border>
 
-                <Button x:Name="PlayButton" Text="Play" HeightRequest="50" FontSize="16" FontAttributes="Bold" Clicked="PlayButton_OnClicked"/>
+                <Button x:Name="PlayButton" Text="PLAY" Style="{StaticResource GreenButton}" HeightRequest="54" FontSize="19" Clicked="PlayButton_OnClicked"/>
                 <!-- Start menu only - resumes a round that was still in progress (mid-hand) when the app last closed, exactly as it was left - see GameProgressStorage.HasInProgressRound/LoadInProgressRound and MainPage's resume constructor. Hidden whenever there's nothing saved to resume (see RefreshLoadGameButton). -->
-                <Button x:Name="LoadGameButton" Text="Load Game" HeightRequest="50" FontSize="16" IsVisible="False" Clicked="LoadGameButton_OnClicked"/>
+                <Button x:Name="LoadGameButton" Text="Load Game" Style="{StaticResource BlueButton}" HeightRequest="50" FontSize="16" IsVisible="False" Clicked="LoadGameButton_OnClicked"/>
                 <!-- Start menu only (item 14) - the daily check-in reward. Opens on its own when a reward is waiting (see OnAppearing); this button is how the streak gets checked the rest of the time. -->
-                <Button x:Name="DailyRewardButton" Text="Daily Reward" HeightRequest="50" FontSize="16" Clicked="DailyRewardButton_OnClicked"/>
+                <Button x:Name="DailyRewardButton" Text="Daily Reward" Style="{StaticResource GoldButton}" HeightRequest="50" FontSize="16" Clicked="DailyRewardButton_OnClicked"/>
                 <!-- Start menu only - the local high-score table (see Views/LeaderboardPage). -->
-                <Button x:Name="LeaderboardButton" Text="Leaderboard" HeightRequest="50" FontSize="16" Clicked="LeaderboardButton_OnClicked"/>
-                <Button x:Name="TableSettingsButton" Text="Table Settings" HeightRequest="50" FontSize="16" Clicked="TableSettingsButton_OnClicked"/>
+                <Button x:Name="LeaderboardButton" Text="Leaderboard" Style="{StaticResource BlueButton}" HeightRequest="50" FontSize="16" Clicked="LeaderboardButton_OnClicked"/>
+                <Button x:Name="TableSettingsButton" Text="Table Settings" Style="{StaticResource BlueButton}" HeightRequest="50" FontSize="16" Clicked="TableSettingsButton_OnClicked"/>
                 <!-- Mid-game only - abandons the current game entirely and returns to the real start menu, where a new game (mode/decks/hands and all) can be started fresh. -->
-                <Button x:Name="ExitToMenuButton" Text="Exit to Menu" HeightRequest="44" Margin="0,10,0,0" Clicked="ExitToMenuButton_OnClicked"/>
+                <Button x:Name="ExitToMenuButton" Text="Exit to Menu" Style="{StaticResource RedButton}" HeightRequest="46" Margin="0,10,0,0" Clicked="ExitToMenuButton_OnClicked"/>
                 <!-- Start menu only (item 13) - resets the saved balance and lifetime stats back to a fresh start. -->
-                <Button x:Name="ResetProgressButton" Text="Reset Progress" HeightRequest="40" FontSize="13" Margin="0,10,0,0" Clicked="ResetProgressButton_OnClicked"/>
-                <Button x:Name="CloseButton" Text="Close" HeightRequest="44" Clicked="CloseButton_OnClicked"/>
+                <Button x:Name="ResetProgressButton" Text="Reset Progress" Style="{StaticResource RedButton}" HeightRequest="42" FontSize="13" Margin="0,10,0,0" Clicked="ResetProgressButton_OnClicked"/>
+                <Button x:Name="CloseButton" Text="Close" Style="{StaticResource RedButton}" HeightRequest="46" Clicked="CloseButton_OnClicked"/>
             </VerticalStackLayout>
         </ScrollView>
 
@@ -75,22 +86,21 @@
             </BoxView.GestureRecognizers>
         </BoxView>
 
-        <Border x:Name="SettingsOverlayCard" IsVisible="False" WidthRequest="280"
+        <Border x:Name="SettingsOverlayCard" IsVisible="False" WidthRequest="290"
                 HorizontalOptions="Center" VerticalOptions="Center"
-                Stroke="#3A6B57" StrokeThickness="1" StrokeShape="RoundRectangle 10"
-                BackgroundColor="#14261F" Padding="20">
+                Style="{StaticResource InkPanel}" Padding="20">
             <VerticalStackLayout Spacing="4">
                 <Label Text="Table Settings" TextColor="White" FontSize="18" FontAttributes="Bold" Margin="0,0,0,10"/>
 
-                <Label Text="Number of Decks" TextColor="#8FBFA9" Margin="0,0,0,6"/>
-                <Picker x:Name="DeckCountPicker" WidthRequest="120" HorizontalOptions="Start"/>
+                <Label Text="Number of Decks" Style="{StaticResource FeltCaption}" FontSize="13" Margin="0,0,0,6"/>
+                <Picker x:Name="DeckCountPicker" WidthRequest="120" HorizontalOptions="Start" TextColor="White" TitleColor="White"/>
 
-                <Label Text="Number of Hands" TextColor="#8FBFA9" Margin="0,20,0,6"/>
-                <Picker x:Name="HandCountPicker" WidthRequest="120" HorizontalOptions="Start"/>
+                <Label Text="Number of Hands" Style="{StaticResource FeltCaption}" FontSize="13" Margin="0,20,0,6"/>
+                <Picker x:Name="HandCountPicker" WidthRequest="120" HorizontalOptions="Start" TextColor="White" TitleColor="White"/>
 
                 <HorizontalStackLayout Spacing="8" HorizontalOptions="End" Margin="0,20,0,0">
-                    <Button x:Name="SettingsCancelButton" Text="Cancel" WidthRequest="90" HeightRequest="36" Clicked="SettingsCancelButton_OnClicked"/>
-                    <Button x:Name="SettingsSaveButton" Text="Save" WidthRequest="90" HeightRequest="36" Clicked="SettingsSaveButton_OnClicked"/>
+                    <Button x:Name="SettingsCancelButton" Text="Cancel" Style="{StaticResource RedButton}" WidthRequest="96" HeightRequest="40" FontSize="14" Clicked="SettingsCancelButton_OnClicked"/>
+                    <Button x:Name="SettingsSaveButton" Text="Save" Style="{StaticResource GreenButton}" WidthRequest="96" HeightRequest="40" FontSize="14" Clicked="SettingsSaveButton_OnClicked"/>
                 </HorizontalStackLayout>
             </VerticalStackLayout>
         </Border>

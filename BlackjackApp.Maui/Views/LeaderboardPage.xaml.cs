@@ -41,7 +41,7 @@ public partial class LeaderboardPage : ContentPage
         var rankLabel = new Label
         {
             Text = $"#{rank}",
-            TextColor = rank == 1 ? Color.FromArgb("#FFD700") : Color.FromArgb("#8FBFA9"),
+            TextColor = rank == 1 ? Color.FromArgb("#FFC400") : Color.FromArgb("#E6F3C8"),
             FontSize = 16,
             FontAttributes = FontAttributes.Bold,
             WidthRequest = 36,
@@ -65,7 +65,7 @@ public partial class LeaderboardPage : ContentPage
             // GameProgressStorage.RecordBalanceForLeaderboard) - shown in
             // whatever timezone the player is actually reading this in.
             Text = entry.AchievedAtUtc.ToLocalTime().ToString("MMM d, yyyy"),
-            TextColor = Color.FromArgb("#8FBFA9"),
+            TextColor = Color.FromArgb("#E6F3C8"),
             FontSize = 11,
             VerticalOptions = LayoutOptions.Center,
         };
@@ -80,7 +80,7 @@ public partial class LeaderboardPage : ContentPage
         var balanceLabel = new Label
         {
             Text = $"${entry.HighestBalance:N0}",
-            TextColor = Color.FromArgb("#FFD700"),
+            TextColor = Color.FromArgb("#FFC400"),
             FontSize = 17,
             FontAttributes = FontAttributes.Bold,
             VerticalOptions = LayoutOptions.Center,
@@ -104,10 +104,10 @@ public partial class LeaderboardPage : ContentPage
 
         return new Border
         {
-            Stroke = rank == 1 ? Color.FromArgb("#FFD700") : Color.FromArgb("#3A6B57"),
+            Stroke = rank == 1 ? Color.FromArgb("#FFC400") : Color.FromArgb("#6F7D55"),
             StrokeThickness = 1,
             StrokeShape = new RoundRectangle { CornerRadius = 8 },
-            BackgroundColor = Color.FromArgb("#0E4433"),
+            BackgroundColor = Color.FromArgb("#59000000"),
             Padding = 12,
             Content = content,
         };

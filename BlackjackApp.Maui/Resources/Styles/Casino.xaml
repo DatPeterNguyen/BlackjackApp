@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+    Casino look-and-feel, built to match the CraftPix "Blackjack Game Kit"
+    art that now lives in Resources/Images.
+
+    Every colour in here was sampled straight out of the kit's own PNGs
+    rather than picked by eye, so the parts we draw in XAML sit in exactly
+    the same palette as the parts that are bitmaps:
+
+      felt greens          table_1.png
+      rail orange          table_1.png (the wooden lip)
+      button gradients     button_hit / _stand / _double / _split .png
+      readout white/maroon win_money.png
+      badge navy           score_panel_1.png
+
+    Why some controls are art and some are XAML: anything whose text is
+    fixed and baked into the artwork (HIT, STAND, DOUBLE, SPLIT,
+    SURRENDER) uses the PNG directly via ImageButton. Anything whose label
+    is ours (Deal, Clear, All In, Press, Cash Out, Insure...) or whose
+    width has to follow the text (balance, bet and result readouts) is
+    drawn here instead, because stretching a fixed-aspect PNG to fit a
+    longer string would visibly distort the artwork's corners and border.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- ===== Palette (sampled from the kit) ===== -->
+    <Color x:Key="FeltLight">#6BA800</Color>
+    <Color x:Key="FeltMid">#5A9300</Color>
+    <Color x:Key="FeltDark">#3C6B00</Color>
+    <Color x:Key="FeltDeep">#2A4D00</Color>
+    <Color x:Key="RailOrange">#D2560F</Color>
+    <Color x:Key="RailOrangeLight">#F07B1E</Color>
+
+    <Color x:Key="ReadoutFill">#FFFFFF</Color>
+    <Color x:Key="ReadoutBorder">#4D0000</Color>
+    <Color x:Key="ReadoutText">#4D0000</Color>
+
+    <Color x:Key="BadgeNavy">#0C1F2A</Color>
+    <Color x:Key="PanelInk">#112401</Color>
+    <Color x:Key="PanelEdge">#BD450E</Color>
+    <Color x:Key="CasinoGold">#FFC400</Color>
+
+    <!-- Button gradient endpoints, top and bottom of each kit button -->
+    <Color x:Key="GreenTop">#CDEE3C</Color>
+    <Color x:Key="GreenBottom">#6DBA13</Color>
+    <Color x:Key="GreenInk">#234A00</Color>
+    <Color x:Key="RedTop">#EE230F</Color>
+    <Color x:Key="RedBottom">#C80602</Color>
+    <Color x:Key="GoldTop">#FECA00</Color>
+    <Color x:Key="GoldBottom">#D57F00</Color>
+    <Color x:Key="GoldInk">#5A3800</Color>
+    <Color x:Key="BlueTop">#10A1EB</Color>
+    <Color x:Key="BlueBottom">#036EC5</Color>
+
+    <!-- ===== Brushes ===== -->
+    <!--
+        The felt. A radial rather than a linear gradient because the kit's
+        table art is lit from a single point above the middle of the table,
+        and a linear ramp reads as a flat wall instead of a lit surface.
+    -->
+    <RadialGradientBrush x:Key="FeltBrush" Center="0.5,0.35" Radius="0.85">
+        <GradientStop Color="{StaticResource FeltLight}" Offset="0.0" />
+        <GradientStop Color="{StaticResource FeltMid}" Offset="0.45" />
+        <GradientStop Color="{StaticResource FeltDark}" Offset="0.85" />
+        <GradientStop Color="{StaticResource FeltDeep}" Offset="1.0" />
+    </RadialGradientBrush>
+
+    <LinearGradientBrush x:Key="GreenButtonBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="{StaticResource GreenTop}" Offset="0.0" />
+        <GradientStop Color="{StaticResource GreenBottom}" Offset="1.0" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="RedButtonBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="{StaticResource RedTop}" Offset="0.0" />
+        <GradientStop Color="{StaticResource RedBottom}" Offset="1.0" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="GoldButtonBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="{StaticResource GoldTop}" Offset="0.0" />
+        <GradientStop Color="{StaticResource GoldBottom}" Offset="1.0" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="BlueButtonBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="{StaticResource BlueTop}" Offset="0.0" />
+        <GradientStop Color="{StaticResource BlueBottom}" Offset="1.0" />
+    </LinearGradientBrush>
+
+    <!-- ===== Buttons ===== -->
+    <!--
+        BasedOn is deliberately left off: Styles.xaml ships MAUI's default
+        implicit Button style (purple, Primary-coloured), and inheriting
+        from it would drag its VisualStateManager along, whose Normal state
+        re-applies that BackgroundColor on top of our Background brush.
+    -->
+    <Style x:Key="CasinoButton" TargetType="Button">
+        <Setter Property="TextColor" Value="White" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="BorderWidth" Value="0" />
+        <Setter Property="HeightRequest" Value="46" />
+        <Setter Property="MinimumHeightRequest" Value="46" />
+        <Setter Property="Padding" Value="14,0" />
+        <Setter Property="Background" Value="{StaticResource RedButtonBrush}" />
+        <Setter Property="VisualStateManager.VisualStateGroups">
+            <VisualStateGroupList>
+                <VisualStateGroup x:Name="CommonStates">
+                    <VisualState x:Name="Normal">
+                        <VisualState.Setters>
+                            <Setter Property="Scale" Value="1" />
+                            <Setter Property="Opacity" Value="1" />
+                        </VisualState.Setters>
+                    </VisualState>
+                    <!-- A small squash on press, the same feedback the kit's
+                         own pressed-state button frames imply. -->
+                    <VisualState x:Name="Pressed">
+                        <VisualState.Setters>
+                            <Setter Property="Scale" Value="0.95" />
+                            <Setter Property="Opacity" Value="0.9" />
+                        </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="Disabled">
+                        <VisualState.Setters>
+                            <Setter Property="Opacity" Value="0.4" />
+                        </VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateGroupList>
+        </Setter>
+    </Style>
+
+    <Style x:Key="GreenButton" TargetType="Button" BasedOn="{StaticResource CasinoButton}">
+        <Setter Property="Background" Value="{StaticResource GreenButtonBrush}" />
+        <Setter Property="TextColor" Value="{StaticResource GreenInk}" />
+    </Style>
+
+    <Style x:Key="RedButton" TargetType="Button" BasedOn="{StaticResource CasinoButton}">
+        <Setter Property="Background" Value="{StaticResource RedButtonBrush}" />
+        <Setter Property="TextColor" Value="White" />
+    </Style>
+
+    <Style x:Key="GoldButton" TargetType="Button" BasedOn="{StaticResource CasinoButton}">
+        <Setter Property="Background" Value="{StaticResource GoldButtonBrush}" />
+        <Setter Property="TextColor" Value="{StaticResource GoldInk}" />
+    </Style>
+
+    <Style x:Key="BlueButton" TargetType="Button" BasedOn="{StaticResource CasinoButton}">
+        <Setter Property="Background" Value="{StaticResource BlueButtonBrush}" />
+        <Setter Property="TextColor" Value="White" />
+    </Style>
+
+    <!-- Square-ish variant for the chip tray's Clear / All In, which sit
+         beside 56px chips and would tower over them at the default height. -->
+    <Style x:Key="ChipTrayButton" TargetType="Button" BasedOn="{StaticResource CasinoButton}">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="WidthRequest" Value="62" />
+        <Setter Property="HeightRequest" Value="62" />
+        <Setter Property="MinimumHeightRequest" Value="62" />
+        <Setter Property="CornerRadius" Value="31" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <!-- ===== Readouts and panels ===== -->
+    <!-- The white, maroon-bordered plate the kit uses for BET / PAID /
+         BALANCE (win_money.png), rebuilt so it can size to its text. -->
+    <Style x:Key="ReadoutPlate" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource ReadoutFill}" />
+        <Setter Property="Stroke" Value="{StaticResource ReadoutBorder}" />
+        <Setter Property="StrokeThickness" Value="5" />
+        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 12" />
+    </Style>
+
+    <Style x:Key="ReadoutText" TargetType="Label">
+        <Setter Property="TextColor" Value="{StaticResource ReadoutText}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+    </Style>
+
+    <!-- The translucent dark plate the kit lays over felt for the player
+         nameplates and the dealer strip (avatar_player_active_1.png). -->
+    <Style x:Key="FeltPanel" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="#59000000" />
+        <Setter Property="Stroke" Value="{StaticResource CasinoGold}" />
+        <Setter Property="StrokeThickness" Value="2" />
+        <Setter Property="Padding" Value="10" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 14" />
+    </Style>
+
+    <!-- The dark inset rows the kit uses inside its settings/shop windows. -->
+    <Style x:Key="InkPanel" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource PanelInk}" />
+        <Setter Property="Stroke" Value="{StaticResource PanelEdge}" />
+        <Setter Property="StrokeThickness" Value="3" />
+        <Setter Property="Padding" Value="12" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 14" />
+    </Style>
+
+    <!-- The red hand-total badge that sits on the corner of each hand in
+         the kit's table mock-up (button_sq.png with a number on it). -->
+    <Style x:Key="TotalBadge" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource RedButtonBrush}" />
+        <Setter Property="Stroke" Value="#8B0000" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="8,3" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 7" />
+    </Style>
+
+    <Style x:Key="TotalBadgeText" TargetType="Label">
+        <Setter Property="TextColor" Value="White" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="FontSize" Value="16" />
+    </Style>
+
+    <!-- Headings over felt need a dark edge to stay legible against the
+         bright centre of the radial gradient. -->
+    <Style x:Key="FeltHeading" TargetType="Label">
+        <Setter Property="TextColor" Value="White" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="Shadow">
+            <Setter.Value>
+                <Shadow Brush="#000000" Offset="0,2" Radius="3" Opacity="0.75" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="FeltCaption" TargetType="Label">
+        <Setter Property="TextColor" Value="#E6F3C8" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    <!--
+        The Shell chrome. Styles.xaml ships MAUI's default, which paints the
+        nav bar white in light mode - a bright band sitting directly on top
+        of the felt. This dictionary is merged after that one in App.xaml,
+        so this implicit style wins, and it deliberately drops the
+        AppThemeBinding: the table looks the same in both system themes, so
+        a nav bar that follows the OS theme would only ever mismatch it.
+    -->
+    <Style TargetType="Shell" ApplyToDerivedTypes="True">
+        <Setter Property="Shell.BackgroundColor" Value="{StaticResource PanelInk}" />
+        <Setter Property="Shell.ForegroundColor" Value="{StaticResource CasinoGold}" />
+        <Setter Property="Shell.TitleColor" Value="{StaticResource CasinoGold}" />
+        <Setter Property="Shell.DisabledColor" Value="#6F7D55" />
+        <Setter Property="Shell.UnselectedColor" Value="#E6F3C8" />
+        <Setter Property="Shell.NavBarHasShadow" Value="False" />
+    </Style>
+</ResourceDictionary>

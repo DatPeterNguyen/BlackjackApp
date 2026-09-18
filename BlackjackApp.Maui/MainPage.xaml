@@ -3,189 +3,258 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="BlackjackApp.Maui.MainPage"
              Title="Blackjack"
-             BackgroundColor="#0B3D2E">
+             BackgroundColor="#2A4D00">
 
     <!--
-        Root layer: the whole scrollable table (below) plus, on top of it
-        and outside every ScrollView's clipping bounds, a single free-
-        floating "ghost" chip image used for the smooth custom chip-drag
-        (see MainPage.xaml.cs ChipImage_OnPanUpdated). It has to live here,
-        as a sibling of the page's ScrollViews rather than inside either of
-        them, or it would get visually clipped the moment it's dragged past
-        the edge of whichever ScrollView it started in.
+        Root layer: the felt artwork, the whole scrollable table on top of
+        it, and - above everything and outside every ScrollView's clipping
+        bounds - a single free-floating "ghost" chip image used for the
+        smooth custom chip-drag (see MainPage.xaml.cs
+        ChipImage_OnPanUpdated). The ghost has to live here, as a sibling
+        of the page's ScrollViews rather than inside either of them, or it
+        would get visually clipped the moment it's dragged past the edge of
+        whichever ScrollView it started in.
     -->
     <Grid x:Name="RootLayout">
 
-    <!--
-        Game table: dealer area, 1-5 player hand slots (built dynamically
-        per the chosen hand count - see MainPage.xaml.cs), a shared bet/
-        result readout, and the chip/action button rows. Wrapped in
-        ScrollViews throughout so nothing overflows on a phone screen.
-    -->
-    <ScrollView>
-        <Grid Padding="16" RowSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+        <!--
+            The table itself, in two layers exactly as the art was drawn:
+            a full-bleed patterned backdrop, and over it the lit felt with
+            its wooden lip, which is transparent below that lip so the
+            backdrop shows through underneath. Both are AspectFill so they
+            cover any window shape without letterboxing, and both are
+            InputTransparent so they never eat a tap or swallow a chip
+            drag aimed at the table above them. UpdateTableColors swaps
+            both sources per variant - the kit ships a green, a red and a
+            gold table, which is what the design doc's three variants want.
+        -->
+        <Image x:Name="BackdropImage" Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
+        <Image x:Name="FeltImage" Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
 
-            <!-- Row 0: Top bar -->
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-                <Border Grid.Column="0" BackgroundColor="#14261F" StrokeShape="RoundRectangle 6"
-                        Padding="12,8" HorizontalOptions="Start">
-                    <VerticalStackLayout Spacing="2">
-                        <Label x:Name="BalanceLabel" Text="Balance: $1,000" TextColor="White" FontSize="18" FontAttributes="Bold"/>
-                        <Label x:Name="VariantLabel" Text="Standard Blackjack" TextColor="#8FBFA9" FontSize="12"/>
+        <!--
+            Game table: dealer area, 1-5 player hand slots (built
+            dynamically per the chosen hand count - see MainPage.xaml.cs),
+            a shared bet/result readout, and the chip/action button rows.
+            Wrapped in ScrollViews throughout so nothing overflows on a
+            phone screen.
+        -->
+        <ScrollView>
+            <Grid Padding="16" RowSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+
+                <!--
+                    Row 0: Top bar - the balance sits on the kit's white,
+                    maroon-edged readout plate (rebuilt in XAML rather than
+                    using win_money.png directly, since the plate has to
+                    grow with a six-figure balance and stretching that PNG
+                    would visibly distort its rounded corners and border).
+                -->
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <Border Grid.Column="0" Style="{StaticResource ReadoutPlate}"
+                            HorizontalOptions="Start" VerticalOptions="Center">
+                        <VerticalStackLayout Spacing="1">
+                            <HorizontalStackLayout Spacing="7">
+                                <Image Source="icon_coin.png" WidthRequest="21" HeightRequest="21"
+                                       Aspect="AspectFit" VerticalOptions="Center"/>
+                                <Label x:Name="BalanceLabel" Text="Balance: $1,000"
+                                       Style="{StaticResource ReadoutText}" FontSize="18" VerticalOptions="Center"/>
+                            </HorizontalStackLayout>
+                            <Label x:Name="VariantLabel" Text="Standard Blackjack"
+                                   TextColor="#7A2222" FontSize="11" Margin="28,0,0,0"/>
+                        </VerticalStackLayout>
+                    </Border>
+                    <!-- Opens GameMenuPage - how-to-play reference and the deck/hand/variant Settings page both live behind this one entry point now. The kit's gear sits top-right on its own table mock-up, which is where players look for it. -->
+                    <ImageButton x:Name="MenuButton" Grid.Column="1" Source="btn_settings.png"
+                                 WidthRequest="50" HeightRequest="50" Aspect="AspectFit"
+                                 BackgroundColor="Transparent" Padding="0" BorderWidth="0"
+                                 VerticalOptions="Center" Clicked="MenuButton_OnClicked"/>
+                </Grid>
+
+                <!--
+                    Row 1: Dealer area - live cards from the real Deck/Hand,
+                    with the kit's croupier standing beside them, flanked by
+                    the shoe (left, where the dealing animation's cards
+                    visually come from) and the discard pile (right, where
+                    each round's played cards actually go instead of
+                    vanishing) it deals from and discards into.
+                -->
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <VerticalStackLayout Grid.Column="0" HorizontalOptions="Center" Spacing="2">
+                        <Image x:Name="ShoeImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit"/>
+                        <Label Text="Shoe" Style="{StaticResource FeltCaption}" FontSize="11" HorizontalOptions="Center"/>
+                        <Label x:Name="ShoeCountLabel" Text="—" Style="{StaticResource FeltHeading}" FontSize="12" HorizontalOptions="Center"/>
+                        <Label x:Name="TableLimitsLabel" Text="" Style="{StaticResource FeltCaption}" FontSize="10" HorizontalOptions="Center"/>
+                    </VerticalStackLayout>
+
+                    <Border x:Name="DealerAreaBorder" Grid.Column="1" Style="{StaticResource FeltPanel}" Padding="8">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                            <!-- She's drawn gesturing to her left, i.e. towards the cards, so she belongs on this side of them. VerticalOptions="End" stands her on the panel's floor rather than floating her against a short hand. -->
+                            <Image Grid.Column="0" Source="dealer.png" HeightRequest="96"
+                                   Aspect="AspectFit" VerticalOptions="End" InputTransparent="True"/>
+                            <VerticalStackLayout Grid.Column="1" HorizontalOptions="Center" VerticalOptions="Center" Spacing="5">
+                                <Label Text="DEALER" Style="{StaticResource FeltHeading}" FontSize="13" HorizontalOptions="Center"/>
+                                <FlexLayout x:Name="DealerCardsLayout" Direction="Row" Wrap="Wrap"
+                                            JustifyContent="Center" AlignItems="Center" HorizontalOptions="Fill"/>
+                                <Label x:Name="DealerValueLabel" Text="" Style="{StaticResource FeltHeading}"
+                                       FontSize="14" HorizontalOptions="Center"/>
+                            </VerticalStackLayout>
+                        </Grid>
+                    </Border>
+
+                    <VerticalStackLayout Grid.Column="2" HorizontalOptions="Center" Spacing="2">
+                        <Image x:Name="DiscardImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit" Opacity="0.55"/>
+                        <Label Text="Discard" Style="{StaticResource FeltCaption}" FontSize="11" HorizontalOptions="Center"/>
+                        <Label x:Name="DiscardCountLabel" Text="0" Style="{StaticResource FeltHeading}" FontSize="12" HorizontalOptions="Center"/>
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!--
+                    Row 2: Player hand slots - one per active hand (1-5,
+                    chosen in Settings). Each slot's cards/chip/bet/value
+                    views are built at runtime in code-behind (see
+                    MainPage.xaml.cs CreateHandSlotView) since the count
+                    varies; tapping a slot before dealing selects it as the
+                    current betting target, and whichever slot is currently
+                    being played gets a highlighted border.
+                -->
+                <Border x:Name="PlayerAreaBorder" Grid.Row="2" Style="{StaticResource FeltPanel}" Padding="8">
+                    <FlexLayout x:Name="PlayerHandsLayout" Direction="Row" Wrap="Wrap" JustifyContent="Center" AlignItems="Center"/>
+                </Border>
+
+                <!--
+                    Row 3: Total wagered across every active hand + general/
+                    system messages, on the same readout plate as the
+                    balance. Each hand's own bet and result live in its own
+                    slot (Row 2) since bets are sized independently per hand.
+                -->
+                <Border Grid.Row="3" Style="{StaticResource ReadoutPlate}" HorizontalOptions="Center">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="3">
+                        <Label x:Name="CurrentBetLabel" Text="Total Wagered: $0"
+                               Style="{StaticResource ReadoutText}" FontSize="19" HorizontalOptions="Center"/>
+                        <Label x:Name="ResultLabel" Text="" TextColor="#9A6B00" FontSize="15"
+                               FontAttributes="Bold" HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
+                        <Label x:Name="WarTotalLabel" Text="" TextColor="#03569B" FontSize="14"
+                               FontAttributes="Bold" HorizontalOptions="Center" IsVisible="False"/>
+                        <Label x:Name="TotalResultLabel" Text="" TextColor="#9A6B00" FontSize="14"
+                               FontAttributes="Bold" HorizontalOptions="Center" IsVisible="False"/>
                     </VerticalStackLayout>
                 </Border>
-                <!-- Opens GameMenuPage - how-to-play reference and the deck/hand/variant Settings page both live behind this one entry point now. -->
-                <Button x:Name="MenuButton" Grid.Column="1" Text="Menu" Padding="12,8" Clicked="MenuButton_OnClicked"/>
+
+                <!--
+                    Row 4: Chip tray - horizontally scrollable so it fits on
+                    a phone width. Betting supports two interactions side by
+                    side: a custom smooth drag (press and drag a chip - a
+                    free-floating "ghost" copy of it follows your finger 1:1
+                    the whole way, escaping this ScrollView's clipping via
+                    RootLayout/DragGhostImage at the very bottom of this
+                    page - see MainPage.xaml.cs ChipImage_OnPanUpdated) onto
+                    the hand slot (Row 2) you want to bet with, and
+                    tap-to-bet (tap a chip to "hold" it - see
+                    ChipImage_OnTapped - then tap a hand slot to place it
+                    there; a fallback for anywhere a drag gesture is
+                    awkward). Both paths route through the same
+                    PlaceChipOnHandAsync so they stay perfectly consistent.
+                    Each Image's ClassId carries its dollar denomination,
+                    since Image has no CommandParameter, and the chips have
+                    to stay Images specifically - ChipImage_OnTapped's
+                    de-highlight pass walks this layout with
+                    Children.OfType<Image>(), so Clear/All In below being
+                    Buttons is what keeps them out of it. They aren't chips,
+                    so dragging doesn't apply to them anyway.
+                -->
+                <ScrollView Grid.Row="4" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                    <HorizontalStackLayout x:Name="ChipButtonsLayout" Spacing="10" HorizontalOptions="Center">
+                        <Image Source="chip_1.png" ClassId="1" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Image Source="chip_5.png" ClassId="5" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Image Source="chip_10.png" ClassId="10" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Image Source="chip_25.png" ClassId="25" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Image Source="chip_100.png" ClassId="100" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Image Source="chip_1000.png" ClassId="1000" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Image Source="chip_10000.png" ClassId="10000" WidthRequest="58" HeightRequest="58" Aspect="AspectFit">
+                            <Image.GestureRecognizers>
+                                <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
+                                <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
+                            </Image.GestureRecognizers>
+                        </Image>
+                        <Button x:Name="ClearBetButton" Text="Clear" Style="{StaticResource ChipTrayButton}"
+                                Margin="12,2,2,2" Clicked="ClearBetButton_OnClicked"/>
+                        <Button x:Name="AllInButton" Text="All In" Style="{StaticResource ChipTrayButton}"
+                                Background="{StaticResource GoldButtonBrush}" TextColor="{StaticResource GoldInk}"
+                                Margin="2" Clicked="AllInButton_OnClicked"/>
+                    </HorizontalStackLayout>
+                </ScrollView>
+
+                <!--
+                    Row 5: Action buttons - also horizontally scrollable.
+                    Hit/Stand/Double/Split are the kit's own button art
+                    (ImageButton, since the label is painted into the PNG);
+                    the rest are our labels, so they're drawn with the
+                    gradient styles in Casino.xaml, whose stops were sampled
+                    out of those same four PNGs so both kinds sit in one
+                    palette. Deal reuses Hit's green because the two are
+                    never on screen together - Deal only shows between
+                    rounds, Hit only during one (see SetRoundInProgress).
+                -->
+                <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                    <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" Padding="0,2,0,4">
+                        <Button x:Name="DealButton" Text="DEAL" Style="{StaticResource GreenButton}"
+                                WidthRequest="112" FontSize="17" Clicked="DealButton_OnClicked"/>
+                        <!-- No IsEnabled="False" here - RefreshActionButtonVisibility (code-behind) is the sole gatekeeper now, hiding each one entirely via IsVisible rather than graying it out, so it also needs to start out enabled. -->
+                        <ImageButton x:Name="HitButton" Source="btn_hit.png" WidthRequest="106" HeightRequest="48"
+                                     Aspect="AspectFit" BackgroundColor="Transparent" Padding="0" BorderWidth="0"
+                                     IsVisible="False" Clicked="HitButton_OnClicked"/>
+                        <ImageButton x:Name="StandButton" Source="btn_stand.png" WidthRequest="106" HeightRequest="48"
+                                     Aspect="AspectFit" BackgroundColor="Transparent" Padding="0" BorderWidth="0"
+                                     IsVisible="False" Clicked="StandButton_OnClicked"/>
+                        <ImageButton x:Name="DoubleButton" Source="btn_double.png" WidthRequest="106" HeightRequest="48"
+                                     Aspect="AspectFit" BackgroundColor="Transparent" Padding="0" BorderWidth="0"
+                                     IsVisible="False" Clicked="DoubleButton_OnClicked"/>
+                        <ImageButton x:Name="SplitButton" Source="btn_split.png" WidthRequest="106" HeightRequest="48"
+                                     Aspect="AspectFit" BackgroundColor="Transparent" Padding="0" BorderWidth="0"
+                                     IsVisible="False" Clicked="SplitButton_OnClicked"/>
+                        <!-- War Blackjack only - shown after a hand's War card beats the dealer's, replacing the normal action buttons for that moment. -->
+                        <Button x:Name="PressWarButton" Text="PRESS" Style="{StaticResource GoldButton}"
+                                WidthRequest="104" IsVisible="False" Clicked="PressWarButton_OnClicked"/>
+                        <Button x:Name="CashOutWarButton" Text="CASH OUT" Style="{StaticResource GreenButton}"
+                                WidthRequest="118" FontSize="14" IsVisible="False" Clicked="CashOutWarButton_OnClicked"/>
+                        <!-- Standard Blackjack only - shown once, right after the opening deal, whenever the dealer's up card is an Ace (see MainPage.PromptForInsurance). -->
+                        <Button x:Name="InsuranceButton" Text="INSURE" Style="{StaticResource BlueButton}"
+                                WidthRequest="108" IsVisible="False" Clicked="InsuranceButton_OnClicked"/>
+                        <Button x:Name="DeclineInsuranceButton" Text="NO INSURANCE" Style="{StaticResource RedButton}"
+                                WidthRequest="146" FontSize="13" IsVisible="False" Clicked="DeclineInsuranceButton_OnClicked"/>
+                    </HorizontalStackLayout>
+                </ScrollView>
             </Grid>
-
-            <!--
-                Row 1: Dealer area - live cards from the real Deck/Hand -
-                flanked by the shoe (left, where the dealing animation's
-                cards visually come from) and the discard pile (right,
-                where each round's played cards actually go instead of
-                vanishing) it deals from and discards into.
-            -->
-            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <VerticalStackLayout Grid.Column="0" HorizontalOptions="Center" Spacing="2">
-                    <Image x:Name="ShoeImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit"/>
-                    <Label Text="Shoe" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
-                    <Label x:Name="ShoeCountLabel" Text="—" TextColor="White" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label x:Name="TableLimitsLabel" Text="" TextColor="#8FBFA9" FontSize="10" HorizontalOptions="Center"/>
-                </VerticalStackLayout>
-
-                <Border x:Name="DealerAreaBorder" Grid.Column="1" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
-                        BackgroundColor="#0E4433" Padding="8">
-                    <VerticalStackLayout HorizontalOptions="Center" Spacing="6">
-                        <Label Text="Dealer" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
-                        <FlexLayout x:Name="DealerCardsLayout" Direction="Row" Wrap="Wrap" JustifyContent="Center" AlignItems="Center" HorizontalOptions="Fill"/>
-                        <Label x:Name="DealerValueLabel" Text="" TextColor="#8FBFA9" FontSize="14" HorizontalOptions="Center"/>
-                    </VerticalStackLayout>
-                </Border>
-
-                <VerticalStackLayout Grid.Column="2" HorizontalOptions="Center" Spacing="2">
-                    <Image x:Name="DiscardImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit" Opacity="0.55"/>
-                    <Label Text="Discard" TextColor="#8FBFA9" FontSize="11" HorizontalOptions="Center"/>
-                    <Label x:Name="DiscardCountLabel" Text="0" TextColor="White" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center"/>
-                </VerticalStackLayout>
-            </Grid>
-
-            <!--
-                Row 2: Player hand slots - one per active hand (1-5, chosen
-                in Settings). Each slot's cards/chip/bet/value views are
-                built at runtime in code-behind (see MainPage.xaml.cs
-                BuildHandSlots) since the count varies; tapping a slot
-                before dealing selects it as the current betting target, and
-                whichever slot is currently being played gets a highlighted
-                border.
-            -->
-            <Border x:Name="PlayerAreaBorder" Grid.Row="2" Stroke="#3A6B57" StrokeThickness="2" StrokeShape="RoundRectangle 8"
-                    BackgroundColor="#0E4433" Padding="8">
-                <FlexLayout x:Name="PlayerHandsLayout" Direction="Row" Wrap="Wrap" JustifyContent="Center" AlignItems="Center"/>
-            </Border>
-
-            <!--
-                Row 3: Total wagered across every active hand + general/
-                system messages. Each hand's own bet and result live in its
-                own slot (Row 2) since bets are sized independently per hand.
-            -->
-            <Border Grid.Row="3" BackgroundColor="#14261F" StrokeShape="RoundRectangle 6" Padding="12,8" HorizontalOptions="Center">
-                <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
-                    <Label x:Name="CurrentBetLabel" Text="Total Wagered: $0" TextColor="White" FontSize="20"
-                           FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label x:Name="ResultLabel" Text="" TextColor="#FFD700" FontSize="16" FontAttributes="Bold"
-                           HorizontalOptions="Center"/>
-                    <Label x:Name="WarTotalLabel" Text="" TextColor="#7FB3FF" FontSize="14" FontAttributes="Bold"
-                           HorizontalOptions="Center" IsVisible="False"/>
-                    <Label x:Name="TotalResultLabel" Text="" TextColor="#FFD700" FontSize="14" FontAttributes="Bold"
-                           HorizontalOptions="Center" IsVisible="False"/>
-                </VerticalStackLayout>
-            </Border>
-
-            <!--
-                Row 4: Chip tray - horizontally scrollable so it fits on a
-                phone width. Betting supports two interactions side by side:
-                a custom smooth drag (press and drag a chip - a free-
-                floating "ghost" copy of it follows your finger 1:1 the
-                whole way, escaping this ScrollView's clipping via
-                RootLayout/DragGhostImage at the very bottom of this page -
-                see MainPage.xaml.cs ChipImage_OnPanUpdated) onto the hand
-                slot (Row 2) you want to bet with, and tap-to-bet (tap a
-                chip to "hold" it - see ChipImage_OnTapped - then tap a hand
-                slot to place it there; a fallback for anywhere a drag
-                gesture is awkward). Both paths route through the same
-                PlaceChipOnHandAsync so they stay perfectly consistent. Each
-                Image's ClassId carries its dollar denomination, since Image
-                has no CommandParameter. Clear/All In stay as ordinary tap
-                buttons - they aren't chips, so dragging doesn't apply.
-            -->
-            <ScrollView Grid.Row="4" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                <HorizontalStackLayout x:Name="ChipButtonsLayout" Spacing="10" HorizontalOptions="Center">
-                    <Image Source="chip_1.png" ClassId="1" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
-                        <Image.GestureRecognizers>
-                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
-                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
-                        </Image.GestureRecognizers>
-                    </Image>
-                    <Image Source="chip_5.png" ClassId="5" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
-                        <Image.GestureRecognizers>
-                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
-                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
-                        </Image.GestureRecognizers>
-                    </Image>
-                    <Image Source="chip_10.png" ClassId="10" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
-                        <Image.GestureRecognizers>
-                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
-                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
-                        </Image.GestureRecognizers>
-                    </Image>
-                    <Image Source="chip_25.png" ClassId="25" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
-                        <Image.GestureRecognizers>
-                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
-                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
-                        </Image.GestureRecognizers>
-                    </Image>
-                    <Image Source="chip_100.png" ClassId="100" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
-                        <Image.GestureRecognizers>
-                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
-                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
-                        </Image.GestureRecognizers>
-                    </Image>
-                    <Image Source="chip_1000.png" ClassId="1000" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
-                        <Image.GestureRecognizers>
-                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
-                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
-                        </Image.GestureRecognizers>
-                    </Image>
-                    <Image Source="chip_10000.png" ClassId="10000" WidthRequest="56" HeightRequest="56" Aspect="AspectFit">
-                        <Image.GestureRecognizers>
-                            <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
-                            <TapGestureRecognizer Tapped="ChipImage_OnTapped"/>
-                        </Image.GestureRecognizers>
-                    </Image>
-                    <Button x:Name="ClearBetButton" Text="Clear" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="14" Margin="12,2,2,2" Clicked="ClearBetButton_OnClicked"/>
-                    <Button x:Name="AllInButton" Text="All In" WidthRequest="60" HeightRequest="60" Padding="0" FontSize="12" Margin="2" Clicked="AllInButton_OnClicked"/>
-                </HorizontalStackLayout>
-            </ScrollView>
-
-            <!-- Row 5: Action buttons - also horizontally scrollable -->
-            <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                <HorizontalStackLayout Spacing="4" HorizontalOptions="Center">
-                    <Button x:Name="DealButton" Text="Deal" WidthRequest="90" HeightRequest="44" Margin="2" FontAttributes="Bold" Clicked="DealButton_OnClicked"/>
-                    <!-- No IsEnabled="False" here - RefreshActionButtonVisibility (code-behind) is the sole gatekeeper now, hiding each one entirely via IsVisible rather than graying it out, so it also needs to start out enabled. -->
-                    <Button x:Name="HitButton" Text="Hit" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="HitButton_OnClicked"/>
-                    <Button x:Name="StandButton" Text="Stand" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="StandButton_OnClicked"/>
-                    <Button x:Name="DoubleButton" Text="Double" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="DoubleButton_OnClicked"/>
-                    <Button x:Name="SplitButton" Text="Split" WidthRequest="90" HeightRequest="44" Margin="2" IsVisible="False" Clicked="SplitButton_OnClicked"/>
-                    <!-- War Blackjack only - shown after a hand's War card beats the dealer's, replacing the normal action buttons for that moment. -->
-                    <Button x:Name="PressWarButton" Text="Press" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="PressWarButton_OnClicked"/>
-                    <Button x:Name="CashOutWarButton" Text="Cash Out" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="CashOutWarButton_OnClicked"/>
-                    <!-- Standard Blackjack only - shown once, right after the opening deal, whenever the dealer's up card is an Ace (see MainPage.PromptForInsurance). -->
-                    <Button x:Name="InsuranceButton" Text="Insure" WidthRequest="90" HeightRequest="44" Margin="2" FontSize="13" IsVisible="False" Clicked="InsuranceButton_OnClicked"/>
-                    <Button x:Name="DeclineInsuranceButton" Text="No Insurance" WidthRequest="110" HeightRequest="44" Margin="2" FontSize="12" IsVisible="False" Clicked="DeclineInsuranceButton_OnClicked"/>
-                </HorizontalStackLayout>
-            </ScrollView>
-        </Grid>
-    </ScrollView>
+        </ScrollView>
 
         <!--
             The drag ghost itself - a plain, input-transparent copy of
@@ -195,7 +264,7 @@
             absolute point on the page. Hidden and fully transparent until a
             drag actually starts.
         -->
-        <Image x:Name="DragGhostImage" WidthRequest="56" HeightRequest="56" Aspect="AspectFit"
+        <Image x:Name="DragGhostImage" WidthRequest="58" HeightRequest="58" Aspect="AspectFit"
                HorizontalOptions="Start" VerticalOptions="Start"
                InputTransparent="True" IsVisible="False" Opacity="0" ZIndex="999"/>
     </Grid>

@@ -160,6 +160,25 @@ public partial class MainPage : ContentPage
     /// <summary>Outer hand slot Border width - HandSlotCardsWidth plus room for its Padding/Border.</summary>
     private const double HandSlotBorderWidth = HandSlotCardsWidth + 16;
 
+    /// <summary>
+    /// Hand slot chrome, matching the CraftPix kit's player nameplates: a
+    /// translucent black plate over the felt, ringed in gold while that
+    /// seat is the one in play (or the one being bet on before the deal),
+    /// and in the kit's button blue while a chip drag is hovering over it.
+    /// These live here as named constants rather than inline literals
+    /// because three different methods have to agree on them exactly -
+    /// CreateHandSlotView paints the resting state,
+    /// RefreshHandSlotHighlights restores it after a selection changes, and
+    /// UpdateDragHoverHighlight restores it after a drag ends. When those
+    /// three disagreed, a slot could be left stuck in a hover colour.
+    /// </summary>
+    private static readonly Color HandSlotFill = Color.FromArgb("#59000000");
+    private static readonly Color HandSlotRestingStroke = Color.FromArgb("#6F7D55");
+    private static readonly Color HandSlotSelectedStroke = Color.FromArgb("#FFC400");
+    private static readonly Color HandSlotHoverStroke = Color.FromArgb("#10A1EB");
+    private static readonly Color WarSlotFill = Color.FromArgb("#4D001B2E");
+    private static readonly Color WarSlotRestingStroke = Color.FromArgb("#2E4A63");
+
     /// <summary>How long each dealt card's fly-in-from-the-shoe animation takes.</summary>
     private const uint CardDealAnimationDurationMs = 220;
 
@@ -483,9 +502,9 @@ public partial class MainPage : ContentPage
         // to) plus a plain "Bet: $X" label - built/rebuilt by
         // UpdateHandSlotBetDisplay.
         var chipImage = new Image { HeightRequest = 32, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
-        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
-        var valueLabel = new Label { Text = "", TextColor = Color.FromArgb("#8FBFA9"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
-        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFD700"), HorizontalOptions = LayoutOptions.Center, FontSize = 10, FontAttributes = FontAttributes.Bold };
+        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#E6F3C8"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
+        var valueLabel = new Label { Text = "", TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, FontSize = 12, FontAttributes = FontAttributes.Bold };
+        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFC400"), HorizontalOptions = LayoutOptions.Center, FontSize = 10, FontAttributes = FontAttributes.Bold };
 
         var content = new VerticalStackLayout
         {
@@ -496,10 +515,11 @@ public partial class MainPage : ContentPage
 
         var border = new Border
         {
-            Stroke = Color.FromArgb("#8FBFA9"),
+            Stroke = HandSlotRestingStroke,
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 6 },
-            Padding = 4,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            BackgroundColor = HandSlotFill,
+            Padding = 6,
             Margin = 2,
             WidthRequest = HandSlotBorderWidth,
             HorizontalOptions = LayoutOptions.Start,
@@ -538,17 +558,17 @@ public partial class MainPage : ContentPage
         // UpdateWarUiVisibility, not built conditionally here, so it
         // doesn't have to be rebuilt if the variant changes without the
         // hand count also changing.
-        var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#7FB3FF"), HorizontalOptions = LayoutOptions.Center, FontSize = 11, FontAttributes = FontAttributes.Bold };
+        var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#7FD4FF"), HorizontalOptions = LayoutOptions.Center, FontSize = 11, FontAttributes = FontAttributes.Bold };
         var warBorder = new Border
         {
-            Stroke = Color.FromArgb("#3A5B7A"),
+            Stroke = WarSlotRestingStroke,
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
             Padding = 4,
             Margin = 2,
             WidthRequest = HandSlotBorderWidth,
             HorizontalOptions = LayoutOptions.Start,
-            BackgroundColor = Color.FromArgb("#132A3D"),
+            BackgroundColor = WarSlotFill,
             IsVisible = _variant is WarBlackjackVariant,
             Content = warBetLabel,
         };
@@ -672,7 +692,7 @@ public partial class MainPage : ContentPage
         {
             var view = _handSlotViews[i];
             var isHighlighted = _roundInProgress ? i == _activeHandIndex : i == _selectedBetIndex;
-            view.Border.Stroke = isHighlighted ? Color.FromArgb("#FFD700") : Color.FromArgb("#8FBFA9");
+            view.Border.Stroke = isHighlighted ? HandSlotSelectedStroke : HandSlotRestingStroke;
             view.Border.StrokeThickness = isHighlighted ? 3 : 1;
 
             // WarBorder doesn't take part in the selected/active gold
@@ -680,7 +700,7 @@ public partial class MainPage : ContentPage
             // chip drag is actually hovering over it (see
             // UpdateDragHoverHighlight), so resetting it back to its resting
             // color here is what un-highlights it once a drag ends.
-            view.WarBorder.Stroke = Color.FromArgb("#3A5B7A");
+            view.WarBorder.Stroke = WarSlotRestingStroke;
             view.WarBorder.StrokeThickness = 1;
         }
 
@@ -897,11 +917,11 @@ public partial class MainPage : ContentPage
         {
             var view = _handSlotViews[i];
             var isMainHovered = i == _dragHoverHandIndex && !_dragHoverIsWar;
-            view.Border.Stroke = isMainHovered ? Color.FromArgb("#7FB3FF") : Color.FromArgb("#8FBFA9");
+            view.Border.Stroke = isMainHovered ? HandSlotHoverStroke : HandSlotRestingStroke;
             view.Border.StrokeThickness = isMainHovered ? 3 : 1;
 
             var isWarHovered = i == _dragHoverHandIndex && _dragHoverIsWar;
-            view.WarBorder.Stroke = isWarHovered ? Color.FromArgb("#7FB3FF") : Color.FromArgb("#3A5B7A");
+            view.WarBorder.Stroke = isWarHovered ? HandSlotHoverStroke : WarSlotRestingStroke;
             view.WarBorder.StrokeThickness = isWarHovered ? 3 : 1;
         }
     }
@@ -2675,23 +2695,34 @@ public partial class MainPage : ContentPage
     private void UpdateVariantLabel() => VariantLabel.Text = _variant.Name;
 
     /// <summary>
-    /// Recolors the table felt to match the design doc's per-variant look:
-    /// green for Standard, red for Double Down Madness, blue for War.
+    /// Swaps the table artwork to match the design doc's per-variant look.
+    /// The kit ships exactly three felts and three backdrops, so each
+    /// variant gets a real one rather than a tinted copy of one table:
+    /// green for Standard, red for Double Down Madness, gold for War.
     /// </summary>
     private void UpdateTableColors()
     {
-        var (pageBackground, feltBackground, feltStroke) = _variant switch
+        var (felt, backdrop, pageBackground, panelAccent) = _variant switch
         {
-            DoubleDownMadnessVariant => (Color.FromArgb("#3D0B0B"), Color.FromArgb("#441010"), Color.FromArgb("#6B3A3A")),
-            WarBlackjackVariant => (Color.FromArgb("#0B1A3D"), Color.FromArgb("#101B44"), Color.FromArgb("#3A4A6B")),
-            _ => (Color.FromArgb("#0B3D2E"), Color.FromArgb("#0E4433"), Color.FromArgb("#3A6B57")),
+            DoubleDownMadnessVariant => ("felt_red.png", "backdrop_olive.png", "#4A0E00", "#FF9A3C"),
+            WarBlackjackVariant => ("felt_gold.png", "backdrop_blue.png", "#003A54", "#8FD8FF"),
+            _ => ("felt_green.png", "backdrop_purple.png", "#2A4D00", "#FFC400"),
         };
 
-        BackgroundColor = pageBackground;
-        DealerAreaBorder.BackgroundColor = feltBackground;
-        DealerAreaBorder.Stroke = feltStroke;
-        PlayerAreaBorder.BackgroundColor = feltBackground;
-        PlayerAreaBorder.Stroke = feltStroke;
+        FeltImage.Source = ImageSource.FromFile(felt);
+        BackdropImage.Source = ImageSource.FromFile(backdrop);
+
+        // Only ever seen in the sliver the felt art can't reach on an
+        // extreme window aspect ratio, so it's matched to each table's own
+        // darkest edge rather than being a colour in its own right.
+        BackgroundColor = Color.FromArgb(pageBackground);
+
+        // The panels keep the translucent-black fill set in MainPage.xaml
+        // (the kit's nameplate look) - only the ring is re-tinted, so it
+        // stays legible against whichever felt is underneath it.
+        var accent = Color.FromArgb(panelAccent);
+        DealerAreaBorder.Stroke = accent;
+        PlayerAreaBorder.Stroke = accent;
     }
 
     private static Image CreateCardImage(string imageFile, double height) => new()
