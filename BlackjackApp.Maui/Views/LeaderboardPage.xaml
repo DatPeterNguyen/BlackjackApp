@@ -23,7 +23,7 @@
 
         <ScrollView>
             <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
-                <Label Text="Leaderboard" Style="{StaticResource FeltHeading}" FontSize="26" HorizontalOptions="Center"/>
+                <Label Text="Leaderboard" Style="{StaticResource FeltHeading}" FontSize="33" HorizontalOptions="Center"/>
                 <Label Text="Highest balance ever reached" Style="{StaticResource FeltCaption}" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,4"/>
 
                 <!-- One row per leaderboard entry - see LeaderboardPage.xaml.cs BuildRows. Shown instead of this when there's nothing to rank yet. -->

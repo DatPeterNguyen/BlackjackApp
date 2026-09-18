@@ -56,7 +56,7 @@
                                 <Image Source="icon_coin.png" WidthRequest="21" HeightRequest="21"
                                        Aspect="AspectFit" VerticalOptions="Center"/>
                                 <Label x:Name="BalanceLabel" Text="Balance: $1,000"
-                                       Style="{StaticResource ReadoutText}" FontSize="18" VerticalOptions="Center"/>
+                                       Style="{StaticResource ReadoutText}" FontSize="23" VerticalOptions="Center"/>
                             </HorizontalStackLayout>
                             <Label x:Name="VariantLabel" Text="Standard Blackjack"
                                    TextColor="#7A2222" FontSize="11" Margin="28,0,0,0"/>
@@ -80,8 +80,8 @@
                 <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <VerticalStackLayout Grid.Column="0" HorizontalOptions="Center" Spacing="2">
                         <Image x:Name="ShoeImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit"/>
-                        <Label Text="Shoe" Style="{StaticResource FeltCaption}" FontSize="11" HorizontalOptions="Center"/>
-                        <Label x:Name="ShoeCountLabel" Text="—" Style="{StaticResource FeltHeading}" FontSize="12" HorizontalOptions="Center"/>
+                        <Label Text="Shoe" Style="{StaticResource FeltHeading}" TextColor="#E6F3C8" FontSize="14" HorizontalOptions="Center"/>
+                        <Label x:Name="ShoeCountLabel" Text="—" Style="{StaticResource FeltHeading}" FontSize="15" HorizontalOptions="Center"/>
                         <Label x:Name="TableLimitsLabel" Text="" Style="{StaticResource FeltCaption}" FontSize="10" HorizontalOptions="Center"/>
                     </VerticalStackLayout>
 
@@ -91,19 +91,19 @@
                             <Image Grid.Column="0" Source="dealer.png" HeightRequest="96"
                                    Aspect="AspectFit" VerticalOptions="End" InputTransparent="True"/>
                             <VerticalStackLayout Grid.Column="1" HorizontalOptions="Center" VerticalOptions="Center" Spacing="5">
-                                <Label Text="DEALER" Style="{StaticResource FeltHeading}" FontSize="13" HorizontalOptions="Center"/>
+                                <Label Text="DEALER" Style="{StaticResource FeltHeading}" FontSize="17" HorizontalOptions="Center"/>
                                 <FlexLayout x:Name="DealerCardsLayout" Direction="Row" Wrap="Wrap"
                                             JustifyContent="Center" AlignItems="Center" HorizontalOptions="Fill"/>
                                 <Label x:Name="DealerValueLabel" Text="" Style="{StaticResource FeltHeading}"
-                                       FontSize="14" HorizontalOptions="Center"/>
+                                       FontSize="18" HorizontalOptions="Center"/>
                             </VerticalStackLayout>
                         </Grid>
                     </Border>
 
                     <VerticalStackLayout Grid.Column="2" HorizontalOptions="Center" Spacing="2">
                         <Image x:Name="DiscardImage" Source="back_red.png" HeightRequest="70" Aspect="AspectFit" Opacity="0.55"/>
-                        <Label Text="Discard" Style="{StaticResource FeltCaption}" FontSize="11" HorizontalOptions="Center"/>
-                        <Label x:Name="DiscardCountLabel" Text="0" Style="{StaticResource FeltHeading}" FontSize="12" HorizontalOptions="Center"/>
+                        <Label Text="Discard" Style="{StaticResource FeltHeading}" TextColor="#E6F3C8" FontSize="14" HorizontalOptions="Center"/>
+                        <Label x:Name="DiscardCountLabel" Text="0" Style="{StaticResource FeltHeading}" FontSize="15" HorizontalOptions="Center"/>
                     </VerticalStackLayout>
                 </Grid>
 
@@ -129,13 +129,13 @@
                 <Border Grid.Row="3" Style="{StaticResource ReadoutPlate}" HorizontalOptions="Center">
                     <VerticalStackLayout HorizontalOptions="Center" Spacing="3">
                         <Label x:Name="CurrentBetLabel" Text="Total Wagered: $0"
-                               Style="{StaticResource ReadoutText}" FontSize="19" HorizontalOptions="Center"/>
-                        <Label x:Name="ResultLabel" Text="" TextColor="#9A6B00" FontSize="15"
-                               FontAttributes="Bold" HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
-                        <Label x:Name="WarTotalLabel" Text="" TextColor="#03569B" FontSize="14"
-                               FontAttributes="Bold" HorizontalOptions="Center" IsVisible="False"/>
-                        <Label x:Name="TotalResultLabel" Text="" TextColor="#9A6B00" FontSize="14"
-                               FontAttributes="Bold" HorizontalOptions="Center" IsVisible="False"/>
+                               Style="{StaticResource ReadoutText}" FontSize="24" HorizontalOptions="Center"/>
+                        <Label x:Name="ResultLabel" Text="" Style="{StaticResource ReadoutText}" TextColor="#9A6B00" FontSize="19"
+                               HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
+                        <Label x:Name="WarTotalLabel" Text="" Style="{StaticResource ReadoutText}" TextColor="#03569B" FontSize="18"
+                               HorizontalOptions="Center" IsVisible="False"/>
+                        <Label x:Name="TotalResultLabel" Text="" Style="{StaticResource ReadoutText}" TextColor="#9A6B00" FontSize="18"
+                               HorizontalOptions="Center" IsVisible="False"/>
                     </VerticalStackLayout>
                 </Border>
 
@@ -227,7 +227,7 @@
                 <ScrollView Grid.Row="5" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                     <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" Padding="0,2,0,4">
                         <Button x:Name="DealButton" Text="DEAL" Style="{StaticResource GreenButton}"
-                                WidthRequest="112" FontSize="17" Clicked="DealButton_OnClicked"/>
+                                WidthRequest="112" FontSize="22" Clicked="DealButton_OnClicked"/>
                         <!-- No IsEnabled="False" here - RefreshActionButtonVisibility (code-behind) is the sole gatekeeper now, hiding each one entirely via IsVisible rather than graying it out, so it also needs to start out enabled. -->
                         <ImageButton x:Name="HitButton" Source="btn_hit.png" WidthRequest="106" HeightRequest="48"
                                      Aspect="AspectFit" BackgroundColor="Transparent" Padding="0" BorderWidth="0"
@@ -245,12 +245,12 @@
                         <Button x:Name="PressWarButton" Text="PRESS" Style="{StaticResource GoldButton}"
                                 WidthRequest="104" IsVisible="False" Clicked="PressWarButton_OnClicked"/>
                         <Button x:Name="CashOutWarButton" Text="CASH OUT" Style="{StaticResource GreenButton}"
-                                WidthRequest="118" FontSize="14" IsVisible="False" Clicked="CashOutWarButton_OnClicked"/>
+                                WidthRequest="118" FontSize="18" IsVisible="False" Clicked="CashOutWarButton_OnClicked"/>
                         <!-- Standard Blackjack only - shown once, right after the opening deal, whenever the dealer's up card is an Ace (see MainPage.PromptForInsurance). -->
                         <Button x:Name="InsuranceButton" Text="INSURE" Style="{StaticResource BlueButton}"
                                 WidthRequest="108" IsVisible="False" Clicked="InsuranceButton_OnClicked"/>
                         <Button x:Name="DeclineInsuranceButton" Text="NO INSURANCE" Style="{StaticResource RedButton}"
-                                WidthRequest="146" FontSize="13" IsVisible="False" Clicked="DeclineInsuranceButton_OnClicked"/>
+                                WidthRequest="146" FontSize="17" IsVisible="False" Clicked="DeclineInsuranceButton_OnClicked"/>
                     </HorizontalStackLayout>
                 </ScrollView>
             </Grid>

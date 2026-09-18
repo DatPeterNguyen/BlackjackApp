@@ -65,6 +65,11 @@
 		
 		<!-- Custom Fonts -->
 		<MauiFont Include="Resources\Fonts\*" />
+		<!-- Bebas Neue is SIL Open Font License, which requires its licence
+		     travel with the font, so BebasNeue-OFL.txt sits beside it. The
+		     glob above would otherwise hand that .txt to the font pipeline
+		     as if it were a typeface. -->
+		<MauiFont Remove="Resources\Fonts\*.txt" />
 
 		<!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />

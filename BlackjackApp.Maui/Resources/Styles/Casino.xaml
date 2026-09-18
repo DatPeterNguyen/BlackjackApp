@@ -25,6 +25,24 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
+    <!--
+        The display face. Bebas Neue is the font the kit's own button art is
+        lettered in (its readme.txt names it), so text we draw sits in the
+        same typeface as the text painted into btn_hit/btn_stand/btn_double/
+        btn_split. Registered in MauiProgram.cs under this alias.
+
+        It ships in a single weight, so nothing styled with it asks for
+        FontAttributes="Bold" - there is no bold cut to reach, and the
+        renderer would synthesise one by smearing the glyphs, which on a
+        face this condensed turns the counters to mud. It's already heavy.
+
+        It's also all-caps (lowercase is drawn as small capitals), which is
+        why it's scoped to buttons, headings and money/score readouts.
+        Sentence-length text - the rules descriptions, hints, captions -
+        stays in Open Sans via FeltCaption and the body styles.
+    -->
+    <x:String x:Key="DisplayFont">BebasNeue</x:String>
+
     <!-- ===== Palette (sampled from the kit) ===== -->
     <Color x:Key="ReadoutFill">#FFFFFF</Color>
     <Color x:Key="ReadoutBorder">#4D0000</Color>
@@ -76,8 +94,12 @@
     -->
     <Style x:Key="CasinoButton" TargetType="Button">
         <Setter Property="TextColor" Value="White" />
-        <Setter Property="FontAttributes" Value="Bold" />
-        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+        <!-- Bebas is condensed, so it reads a size or two smaller than Open
+             Sans at the same point size; these numbers are set against how
+             it actually renders, not carried over from the old face. -->
+        <Setter Property="FontSize" Value="19" />
+        <Setter Property="CharacterSpacing" Value="1" />
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="BorderWidth" Value="0" />
         <Setter Property="HeightRequest" Value="46" />
@@ -134,7 +156,7 @@
     <!-- Square-ish variant for the chip tray's Clear / All In, which sit
          beside 56px chips and would tower over them at the default height. -->
     <Style x:Key="ChipTrayButton" TargetType="Button" BasedOn="{StaticResource CasinoButton}">
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="WidthRequest" Value="62" />
         <Setter Property="HeightRequest" Value="62" />
         <Setter Property="MinimumHeightRequest" Value="62" />
@@ -155,7 +177,8 @@
 
     <Style x:Key="ReadoutText" TargetType="Label">
         <Setter Property="TextColor" Value="{StaticResource ReadoutInk}" />
-        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+        <Setter Property="CharacterSpacing" Value="1" />
     </Style>
 
     <!-- The translucent dark plate the kit lays over felt for the player
@@ -181,7 +204,8 @@
          bright centre of the radial gradient. -->
     <Style x:Key="FeltHeading" TargetType="Label">
         <Setter Property="TextColor" Value="White" />
-        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+        <Setter Property="CharacterSpacing" Value="1" />
         <Setter Property="Shadow">
             <Setter.Value>
                 <Shadow Brush="#000000" Offset="0,2" Radius="3" Opacity="0.75" />
@@ -189,6 +213,10 @@
         </Setter>
     </Style>
 
+    <!-- Deliberately left in the body face: this carries full sentences
+         ("Play a round to set your first record.", "Tap a mode to select
+         it, then hit Play to start."), which the display face is the wrong
+         tool for. -->
     <Style x:Key="FeltCaption" TargetType="Label">
         <Setter Property="TextColor" Value="#E6F3C8" />
         <Setter Property="FontSize" Value="12" />

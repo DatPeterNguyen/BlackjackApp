@@ -75,7 +75,8 @@ public partial class CheckInPage : ContentPage
             var dayLabel = new Label
             {
                 Text = $"Day {day}",
-                FontSize = 9,
+                FontSize = 12,
+                FontFamily = AppFonts.Display,
                 TextColor = isClaimed ? Color.FromArgb("#2A4D00") : Color.FromArgb("#E6F3C8"),
                 HorizontalOptions = LayoutOptions.Center,
             };
@@ -83,8 +84,8 @@ public partial class CheckInPage : ContentPage
             var amountLabel = new Label
             {
                 Text = isWheelDay ? "SPIN" : $"${DailyCheckIn.DailyReward:N0}",
-                FontSize = isWheelDay ? 11 : 12,
-                FontAttributes = FontAttributes.Bold,
+                FontSize = isWheelDay ? 14 : 15,
+                FontFamily = AppFonts.Display,
                 TextColor = isClaimed
                     ? Color.FromArgb("#2A4D00")
                     : isWheelDay ? Color.FromArgb("#FFC400") : Colors.White,

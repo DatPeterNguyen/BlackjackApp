@@ -502,9 +502,9 @@ public partial class MainPage : ContentPage
         // to) plus a plain "Bet: $X" label - built/rebuilt by
         // UpdateHandSlotBetDisplay.
         var chipImage = new Image { HeightRequest = 32, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
-        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#E6F3C8"), HorizontalOptions = LayoutOptions.Center, FontSize = 11 };
-        var valueLabel = new Label { Text = "", TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, FontSize = 12, FontAttributes = FontAttributes.Bold };
-        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFC400"), HorizontalOptions = LayoutOptions.Center, FontSize = 10, FontAttributes = FontAttributes.Bold };
+        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#E6F3C8"), HorizontalOptions = LayoutOptions.Center, FontSize = 14, FontFamily = AppFonts.Display };
+        var valueLabel = new Label { Text = "", TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, FontSize = 16, FontFamily = AppFonts.Display };
+        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFC400"), HorizontalOptions = LayoutOptions.Center, FontSize = 13, FontFamily = AppFonts.Display };
 
         var content = new VerticalStackLayout
         {
@@ -558,7 +558,7 @@ public partial class MainPage : ContentPage
         // UpdateWarUiVisibility, not built conditionally here, so it
         // doesn't have to be rebuilt if the variant changes without the
         // hand count also changing.
-        var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#7FD4FF"), HorizontalOptions = LayoutOptions.Center, FontSize = 11, FontAttributes = FontAttributes.Bold };
+        var warBetLabel = new Label { Text = "War: $0", TextColor = Color.FromArgb("#7FD4FF"), HorizontalOptions = LayoutOptions.Center, FontSize = 14, FontFamily = AppFonts.Display };
         var warBorder = new Border
         {
             Stroke = WarSlotRestingStroke,

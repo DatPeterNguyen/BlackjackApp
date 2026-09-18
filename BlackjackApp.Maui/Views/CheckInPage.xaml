@@ -24,7 +24,7 @@
 
         <ScrollView>
             <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
-                <Label Text="Daily Reward" Style="{StaticResource FeltHeading}" FontSize="26" HorizontalOptions="Center"/>
+                <Label Text="Daily Reward" Style="{StaticResource FeltHeading}" FontSize="33" HorizontalOptions="Center"/>
                 <Label x:Name="StreakSummaryLabel" Text="" Style="{StaticResource FeltCaption}" FontSize="13"
                        HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
 
@@ -54,14 +54,14 @@
                 <Label x:Name="WheelHintLabel" Text="Tap the wheel to spin!" Style="{StaticResource FeltCaption}" FontSize="13"
                        HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
 
-                <Label x:Name="OutcomeLabel" Text="" TextColor="#FFC400" FontSize="17" FontAttributes="Bold"
+                <Label x:Name="OutcomeLabel" Text="" Style="{StaticResource FeltHeading}" TextColor="#FFC400" FontSize="22"
                        HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False"/>
 
-                <Button x:Name="ClaimButton" Text="CLAIM" Style="{StaticResource GreenButton}" HeightRequest="54" FontSize="18"
+                <Button x:Name="ClaimButton" Text="CLAIM" Style="{StaticResource GreenButton}" HeightRequest="54" FontSize="23"
                         Margin="0,4,0,0" Clicked="ClaimButton_OnClicked"/>
                 <!-- Debug builds only (see CheckInPage.xaml.cs) - jumps the saved streak to "day 6, claimed yesterday" so tapping Claim lands on
                      the real day-7 wheel, without waiting a week for it to come around naturally. Stays hidden and inert in Release. -->
-                <Button x:Name="DebugForceDayButton" Text="Debug: Force Day 7" Style="{StaticResource GoldButton}" HeightRequest="38" FontSize="12" IsVisible="False" Clicked="DebugForceDayButton_OnClicked"/>
+                <Button x:Name="DebugForceDayButton" Text="Debug: Force Day 7" Style="{StaticResource GoldButton}" HeightRequest="38" FontSize="15" IsVisible="False" Clicked="DebugForceDayButton_OnClicked"/>
                 <Button x:Name="CloseButton" Text="Close" Style="{StaticResource RedButton}" HeightRequest="46" Clicked="CloseButton_OnClicked"/>
             </VerticalStackLayout>
         </ScrollView>

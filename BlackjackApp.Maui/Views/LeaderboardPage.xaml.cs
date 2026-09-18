@@ -42,8 +42,8 @@ public partial class LeaderboardPage : ContentPage
         {
             Text = $"#{rank}",
             TextColor = rank == 1 ? Color.FromArgb("#FFC400") : Color.FromArgb("#E6F3C8"),
-            FontSize = 16,
-            FontAttributes = FontAttributes.Bold,
+            FontSize = 20,
+            FontFamily = AppFonts.Display,
             WidthRequest = 36,
             VerticalOptions = LayoutOptions.Center,
         };
@@ -52,8 +52,8 @@ public partial class LeaderboardPage : ContentPage
         {
             Text = entry.PlayerName,
             TextColor = Color.FromArgb("White"),
-            FontSize = 16,
-            FontAttributes = FontAttributes.Bold,
+            FontSize = 20,
+            FontFamily = AppFonts.Display,
             VerticalOptions = LayoutOptions.Center,
             HorizontalOptions = LayoutOptions.Fill,
             LineBreakMode = LineBreakMode.TailTruncation,
@@ -81,8 +81,8 @@ public partial class LeaderboardPage : ContentPage
         {
             Text = $"${entry.HighestBalance:N0}",
             TextColor = Color.FromArgb("#FFC400"),
-            FontSize = 17,
-            FontAttributes = FontAttributes.Bold,
+            FontSize = 22,
+            FontFamily = AppFonts.Display,
             VerticalOptions = LayoutOptions.Center,
             HorizontalOptions = LayoutOptions.End,
         };
