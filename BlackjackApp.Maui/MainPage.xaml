@@ -203,22 +203,24 @@
                     seats whenever the felt got short.
                 -->
                 <!--
-                    Scrolled rather than wrapped. Each seat is a fixed ~168pt
-                    wide, so five of them need 840pt - more than the 824pt an
-                    iPhone 15 has in landscape once the page padding is off,
-                    and a split makes six. Wrapping put the overflow on a
-                    second flex line, which broke the arc (ApplyHandSlotArc
-                    lifts by position in the row, and a wrapped child's index
-                    no longer means what it did) and stole height from the
-                    felt. One line that scrolls keeps the arc honest, and
-                    GetAbsolutePosition already subtracts ScrollX, so the
-                    chip-drop targets stay aligned when it is scrolled.
+                    NOT inside a ScrollView. It was, briefly, to stop five
+                    seats wrapping onto a second line - and that made the
+                    whole row vanish: a FlexLayout given no height constraint
+                    by a horizontal ScrollView measures to zero, so every seat
+                    was laid out with no height at all. This is the third time
+                    FlexLayout measurement has bitten this file (see also
+                    HandSlotCardsWidth being pinned, and the dealer's cards
+                    collapsing inside an Auto column), and the lesson each
+                    time is the same: never hand a FlexLayout an unconstrained
+                    dimension and expect a sensible answer.
+
+                    Wrap is back because a second line is a far smaller
+                    problem than no seats. It is also now mostly unreachable:
+                    compact metrics narrow a seat to ~140pt on a phone, so
+                    five fit across any current iPhone in landscape.
                 -->
-                <ScrollView Grid.Row="1" Orientation="Horizontal" HorizontalScrollBarVisibility="Never"
-                            VerticalOptions="End">
-                    <FlexLayout x:Name="PlayerHandsLayout" Direction="Row" Wrap="NoWrap"
-                                JustifyContent="Center" AlignItems="End"/>
-                </ScrollView>
+                <FlexLayout x:Name="PlayerHandsLayout" Grid.Row="1" Direction="Row" Wrap="Wrap"
+                            JustifyContent="Center" AlignItems="End" VerticalOptions="End"/>
             </Grid>
 
             <!--
