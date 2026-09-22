@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using BlackjackApp.Maui.Services;
+using Microsoft.Extensions.Logging;
+using Plugin.MauiMtAdmob;
 
 namespace BlackjackApp.Maui;
 
@@ -9,6 +11,7 @@ public static class MauiProgram
 		var builder = MauiApp.CreateBuilder();
 		builder
 			.UseMauiApp<App>()
+			.UseMauiMTAdmob()
 			.ConfigureFonts(fonts =>
 			{
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -27,6 +30,22 @@ public static class MauiProgram
 #if DEBUG
 		builder.Logging.AddDebug();
 #endif
+
+		// The one ad surface in the app: a rewarded video the player can
+		// choose to watch for chips once they have run out - see
+		// BlackjackApp.core.Services.ChipRescue for when that is offered.
+		//
+		// Assigned here rather than injected because the app has no DI
+		// container (see AppServices). If anything about the SDK is not
+		// working, AdMobRewardedAdService simply reports that no ad is
+		// ready, the offer is never made, and the game plays exactly as it
+		// did before ads existed.
+		AppServices.Ads = new AdMobRewardedAdService();
+
+		// The online leaderboard. Inert until LeaderboardConfig has a project
+		// URL and anon key in it, at which point this starts serving the real
+		// board - see LeaderboardConfig for where those come from.
+		AppServices.Leaderboard = new SupabaseLeaderboardService();
 
 		return builder.Build();
 	}

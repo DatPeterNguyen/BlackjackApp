@@ -78,6 +78,8 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+		<!-- AdMob, for the rewarded video the player can trade for chips when they bust out - see BlackjackApp.core.Services.ChipRescue. -->
+		<PackageReference Include="Plugin.MauiMTAdmob" Version="2.4.0" />
 	</ItemGroup>
 
 	<ItemGroup>

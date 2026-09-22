@@ -13,19 +13,30 @@
 	<array>
 		<string>arm64</string>
 	</array>
+	<!-- Landscape only: the table is laid out as one wide composition (see MainPage.xaml) and has no portrait form. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!--
+		Google's sample AdMob app id - the SDK refuses to start without one.
+		Replace with the real app id from the AdMob console before release,
+		alongside the ad unit in AdMobRewardedAdService.
+
+		NOT yet present, and required before shipping ads that use the IDFA:
+		NSUserTrackingUsageDescription plus an App Tracking Transparency
+		prompt, and SKAdNetworkItems. Without those the app still serves ads,
+		just non-personalised ones, which is the right default until there is
+		a real AdMob account behind this.
+	-->
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3940256099942544~1458002511</string>
 	<key>XSAppIconAssets</key>
 	<string>Assets.xcassets/appicon.appiconset</string>
 </dict>
