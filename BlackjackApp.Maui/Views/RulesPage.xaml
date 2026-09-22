@@ -19,11 +19,20 @@
            confirms and actually starts a game with whichever one is
            currently selected.
     -->
-    <Grid>
+    <Grid SafeAreaEdges="None">
+        <!--
+            SafeAreaEdges="None" on this root so the table art stays
+            full-bleed behind the notch and the home indicator. .NET 10
+            changed the default: layouts now inset themselves ("Container")
+            unless told otherwise, so without this the artwork would stop
+            short of the screen edges on a notched iPhone and leave bars.
+            The content layer below opts back in, so only the controls
+            actually move inwards.
+        -->
         <Image Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
         <Image Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
 
-        <ScrollView>
+        <ScrollView SafeAreaEdges="Container">
         <VerticalStackLayout Padding="20" Spacing="16">
             <Label Text="How to Play" Style="{StaticResource FeltHeading}" FontSize="30"/>
             <Label x:Name="SelectionHintLabel" Text="Tap a mode to select it, then hit Play to start." Style="{StaticResource FeltCaption}" FontSize="12" IsVisible="False"/>

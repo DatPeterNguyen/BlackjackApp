@@ -17,14 +17,27 @@
         Rows are built in code-behind since the count varies (currently
         always 1, but not forever).
     -->
-    <Grid>
+    <Grid SafeAreaEdges="None">
+        <!--
+            SafeAreaEdges="None" on this root so the table art stays
+            full-bleed behind the notch and the home indicator. .NET 10
+            changed the default: layouts now inset themselves ("Container")
+            unless told otherwise, so without this the artwork would stop
+            short of the screen edges on a notched iPhone and leave bars.
+            The content layer below opts back in, so only the controls
+            actually move inwards.
+        -->
         <Image Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
         <Image Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
 
-        <ScrollView>
+        <ScrollView SafeAreaEdges="Container">
             <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
                 <Label Text="Leaderboard" Style="{StaticResource FeltHeading}" FontSize="33" HorizontalOptions="Center"/>
                 <Label Text="Highest balance ever reached" Style="{StaticResource FeltCaption}" FontSize="13" HorizontalOptions="Center" Margin="0,0,0,4"/>
+
+                <!-- Says what the list below currently is: the global board, or a fallback to this device's own records when it can't be reached. Hidden entirely once the global board has loaded, since by then the rows speak for themselves. -->
+                <Label x:Name="StatusLabel" Text="" Style="{StaticResource FeltCaption}" FontSize="12"
+                       HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="False" Margin="0,0,0,4"/>
 
                 <!-- One row per leaderboard entry - see LeaderboardPage.xaml.cs BuildRows. Shown instead of this when there's nothing to rank yet. -->
                 <VerticalStackLayout x:Name="RowsLayout" Spacing="8"/>

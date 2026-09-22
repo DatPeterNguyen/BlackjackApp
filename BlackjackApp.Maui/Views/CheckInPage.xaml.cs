@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using BlackjackApp.core.Services;
 using Microsoft.Maui.Controls.Shapes;
+using Microsoft.Maui.Dispatching;
 using Microsoft.Maui.Graphics;
 
 namespace BlackjackApp.Maui.Views;
@@ -26,7 +27,19 @@ public partial class CheckInPage : ContentPage
 
     private static readonly Random Rng = new();
 
-    private readonly DateOnly _today;
+    /// <summary>Ticks the countdown. Only runs while the page is on screen and a reward is actually pending - see StartOrStopCountdown.</summary>
+    private IDispatcherTimer? _countdown;
+
+    /// <summary>
+    /// Whether the page is currently on screen. Needed because work can land
+    /// after the page is gone: the day-7 spin awaits a 3+ second animation
+    /// before paying out, and closing mid-spin means OnDisappearing has
+    /// already stopped the timer by the time PayOut asks for one. Without this
+    /// that request would start a fresh timer on a dead page, which nothing
+    /// would ever stop - it would tick once a second forever, holding the
+    /// whole visual tree alive and writing to labels nobody can see.
+    /// </summary>
+    private bool _isOnScreen;
     private CheckInStatus _status;
     private bool _busy;
 
@@ -37,7 +50,6 @@ public partial class CheckInPage : ContentPage
     {
         InitializeComponent();
 
-        _today = DateOnly.FromDateTime(DateTime.Now);
         WheelView.Drawable = new WheelDrawable();
 
         ReloadStatus();
@@ -50,9 +62,13 @@ public partial class CheckInPage : ContentPage
     }
 
     private void ReloadStatus() => _status = DailyCheckIn.GetStatus(
-        GameProgressStorage.LoadLastCheckIn(),
+        GameProgressStorage.LoadLastCheckInUtc(),
         GameProgressStorage.LoadCheckInStreakDay(),
-        _today);
+        // Read fresh rather than from a value captured when the page
+        // opened: TickCountdown calls this the moment the clock runs
+        // out, and against a stale "now" the reward would still look
+        // locked on the page that just finished counting down to it.
+        DateTime.UtcNow);
 
     /// <summary>
     /// Draws the seven-day cycle: days already banked in this cycle are
@@ -131,14 +147,23 @@ public partial class CheckInPage : ContentPage
             ClaimButton.IsEnabled = true;
             ClaimButton.Text = $"Claim ${DailyCheckIn.DailyReward:N0}";
 
+            CountdownLabel.IsVisible = false;
+            StopCountdown();
+
             return;
         }
 
         StreakSummaryLabel.Text = _status.StreakDay >= DailyCheckIn.StreakLength
-            ? "Streak complete - a fresh one starts tomorrow."
-            : $"Day {_status.StreakDay} claimed. Day {_status.StreakDay + 1} unlocks tomorrow.";
+            ? "Streak complete - a fresh one starts when the clock runs out."
+            : $"Day {_status.StreakDay} claimed. Day {_status.StreakDay + 1} unlocks when the clock runs out.";
 
         ClaimButton.IsVisible = false;
+
+        // Draw the remaining time immediately from the status we already
+        // have, so the countdown is correct on the very first frame instead
+        // of blank until the first tick a second later.
+        ShowCountdown(_status.TimeUntilNextClaim);
+        StartOrStopCountdown();
     }
 
     private void ClaimButton_OnClicked(object? sender, EventArgs e)
@@ -210,10 +235,90 @@ public partial class CheckInPage : ContentPage
         PayOut(prize, $"The wheel landed on ${prize:N0}!");
     }
 
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        _isOnScreen = true;
+        StartOrStopCountdown();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _isOnScreen = false;
+        StopCountdown();
+    }
+
+    /// <summary>
+    /// Runs a one-second tick only while there is something to count down to.
+    /// A reward that is already claimable needs no timer, and neither does a
+    /// page nobody is looking at - leaving a dispatcher timer running against
+    /// a closed page is how you leak one.
+    /// </summary>
+    private void StartOrStopCountdown()
+    {
+        if (!_isOnScreen || _status.CanClaim)
+        {
+            StopCountdown();
+            return;
+        }
+
+        if (_countdown is not null)
+        {
+            return;
+        }
+
+        _countdown = Dispatcher.CreateTimer();
+        _countdown.Interval = TimeSpan.FromSeconds(1);
+        _countdown.Tick += (_, _) => TickCountdown();
+        _countdown.Start();
+    }
+
+    private void StopCountdown()
+    {
+        _countdown?.Stop();
+        _countdown = null;
+    }
+
+    /// <summary>
+    /// Re-reads the clock and redraws the remaining time. When it reaches
+    /// zero the whole status is reloaded, so the page flips to a claimable
+    /// reward on its own rather than making the player back out and return.
+    /// </summary>
+    private void TickCountdown()
+    {
+        var remaining = DailyCheckIn.TimeUntilNextClaim(
+            GameProgressStorage.LoadLastCheckInUtc(),
+            DateTime.UtcNow);
+
+        if (remaining <= TimeSpan.Zero)
+        {
+            StopCountdown();
+            ReloadStatus();
+            BuildDayStrip();
+            RefreshForStatus();
+            return;
+        }
+
+        ShowCountdown(remaining);
+    }
+
+    /// <summary>Renders the remaining time as h:mm:ss, counting whole seconds down rather than showing a stale value for the first second.</summary>
+    private void ShowCountdown(TimeSpan remaining)
+    {
+        // Round up: with 4.2s left the player should read "4", not "4" only
+        // after it has already become 3.2s. Ceiling keeps the last visible
+        // number 1 rather than flashing 0 before it unlocks.
+        var whole = TimeSpan.FromSeconds(Math.Ceiling(remaining.TotalSeconds));
+
+        CountdownLabel.Text = $"Next bonus in {(int)whole.TotalHours}:{whole.Minutes:00}:{whole.Seconds:00}";
+        CountdownLabel.IsVisible = true;
+    }
+
     private void PayOut(decimal amount, string message)
     {
         GameProgressStorage.SaveBalance(GameProgressStorage.LoadBalance() + amount);
-        GameProgressStorage.SaveCheckIn(_today, _status.StreakDay);
+        GameProgressStorage.SaveCheckIn(DateTime.UtcNow, _status.StreakDay);
 
         ReloadStatus();
         BuildDayStrip();
@@ -235,7 +340,9 @@ public partial class CheckInPage : ContentPage
     /// </summary>
     private void DebugForceDayButton_OnClicked(object? sender, EventArgs e)
     {
-        GameProgressStorage.SaveCheckIn(_today.AddDays(-1), 6);
+        // Backdates the last claim past the 24-hour gate but inside the
+        // 48-hour streak window, so the next day is immediately claimable.
+        GameProgressStorage.SaveCheckIn(DateTime.UtcNow - DailyCheckIn.ClaimInterval - TimeSpan.FromMinutes(1), 6);
 
         ReloadStatus();
         BuildDayStrip();

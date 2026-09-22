@@ -22,6 +22,24 @@ internal static class AppFonts
     /// </summary>
     public const string Display = "BebasNeue";
 
+    /// <summary>
+    /// The same face named the way the PLATFORM knows it, rather than by the
+    /// alias above. Both are needed and they are not interchangeable.
+    ///
+    /// MAUI resolves an alias like "BebasNeue" through its own font registry,
+    /// which is what Label.FontFamily and the XAML styles use. Drawing into a
+    /// GraphicsView does not go through that registry - Microsoft.Maui.Graphics
+    /// hands the name straight to the platform (CoreText on iOS, Typeface on
+    /// Android, DirectWrite on Windows), all of which want a real font name.
+    /// The alias matches none of the names inside the file, so asking for it
+    /// there silently falls back to the system face.
+    ///
+    /// "Bebas Neue" is the family name recorded in BebasNeue-Regular.ttf (its
+    /// PostScript name is "BebasNeue-Regular"). Used by MainPage's
+    /// TableRulesDrawable.
+    /// </summary>
+    public const string DisplayFamily = "Bebas Neue";
+
     /// <summary>Open Sans - anything sentence-length.</summary>
     public const string Body = "OpenSansRegular";
 }

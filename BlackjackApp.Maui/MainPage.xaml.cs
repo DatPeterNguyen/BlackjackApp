@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using BlackjackApp.core.Economy;
 using BlackjackApp.core.Models;
+using BlackjackApp.core.Services;
 using BlackjackApp.core.Variants;
+using BlackjackApp.Maui.Services;
 using BlackjackApp.Maui.Views;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Layouts;
@@ -151,14 +153,49 @@ public partial class MainPage : ContentPage
     /// </summary>
     private int _roundGeneration;
 
-    /// <summary>Card image height used inside a hand slot - smaller than the dealer's so several fit across one slot's width before wrapping.</summary>
-    private const double HandSlotCardHeight = 56;
+    // ---- Table metrics -------------------------------------------------
+    //
+    // These were fixed constants, sized against a desktop window. They cannot
+    // be: the table needs roughly 500pt of height at those sizes and the
+    // largest iPhone offers 409 in landscape, so on any phone the seats were
+    // squeezed or clipped off the bottom. They are now fields, recomputed by
+    // ApplyAdaptiveMetrics whenever the page is resized.
+    //
+    // Full sizes are the desktop/tablet values; compact ones are what a phone
+    // in landscape can actually afford.
 
-    /// <summary>Real, explicit width for a hand slot's card row - wide enough to fit 3 HandSlotCardHeight-sized cards per row before wrapping.</summary>
-    private const double HandSlotCardsWidth = 140;
+    private const double DealerCardHeightFull = 130;
+    private const double DealerCardHeightCompact = 72;
+
+    private const double HandSlotCardHeightFull = 56;
+    private const double HandSlotCardHeightCompact = 40;
+
+    private const double HandSlotCardsWidthFull = 140;
+    private const double HandSlotCardsWidthCompact = 116;
+
+    /// <summary>Below this height in device-independent points the table switches to compact metrics. An iPhone 15 is 393pt tall in landscape; an iPad is 834.</summary>
+    private const double CompactHeightThreshold = 500;
+
+    /// <summary>Whether the table is currently laid out for a short screen.</summary>
+    private bool _compact;
+
+    /// <summary>Dealer card image height - see the metrics block above.</summary>
+    private double DealerCardHeight => _compact ? DealerCardHeightCompact : DealerCardHeightFull;
+
+    /// <summary>Card image height inside a hand slot - smaller than the dealer's so several fit across one slot's width.</summary>
+    private double HandSlotCardHeight => _compact ? HandSlotCardHeightCompact : HandSlotCardHeightFull;
+
+    /// <summary>Explicit width for a hand slot's card row - a Fill request alone wasn't reliably resolving to a real width inside the stack.</summary>
+    private double HandSlotCardsWidth => _compact ? HandSlotCardsWidthCompact : HandSlotCardsWidthFull;
 
     /// <summary>Outer hand slot Border width - HandSlotCardsWidth plus room for its Padding/Border.</summary>
-    private const double HandSlotBorderWidth = HandSlotCardsWidth + 16;
+    private double HandSlotBorderWidth => HandSlotCardsWidth + 16;
+
+    /// <summary>How far above the middle seat the outermost ones are lifted, to follow the curve of the table's near edge - see ApplyHandSlotArc.</summary>
+    private const double HandSlotArcLift = 22;
+
+    /// <summary>The house rules painted across the felt - re-pointed at the current variant's wording by UpdateTableColors.</summary>
+    private readonly TableRulesDrawable _tableRules = new();
 
     /// <summary>
     /// Hand slot chrome, matching the CraftPix kit's player nameplates: a
@@ -297,6 +334,8 @@ public partial class MainPage : ContentPage
             _handSlotViews.Add(view);
             PlayerHandsLayout.Children.Add(container);
         }
+
+        ApplyHandSlotArc();
 
         _activeHandIndex = savedRound.ActiveHandIndex;
         _selectedBetIndex = savedRound.SelectedBetIndex;
@@ -465,8 +504,169 @@ public partial class MainPage : ContentPage
             PlayerHandsLayout.Children.Add(container);
         }
 
+        ApplyHandSlotArc();
         RefreshHandSlotHighlights();
         UpdateWarUiVisibility();
+    }
+
+    /// <summary>
+    /// Re-picks the table's metrics for the space actually available, and
+    /// rebuilds anything that was sized with the old ones.
+    ///
+    /// At full size the table needs roughly 500pt of height. A landscape
+    /// iPhone offers between 354 and 409 once the home indicator is out, so
+    /// on a phone the seats were being squeezed flat or pushed off the bottom
+    /// entirely - the layout was only ever checked against a desktop window.
+    /// Compact metrics shrink the cards, tighten the seat text and drop the
+    /// decorative chip picture, which brings it inside what a phone has.
+    ///
+    /// Only does work when the mode actually flips, since it rebuilds every
+    /// seat - OnSizeAllocated fires on every resize tick and on rotation.
+    /// </summary>
+    private void ApplyAdaptiveMetrics(double height)
+    {
+        if (height <= 0)
+        {
+            return;
+        }
+
+        var shouldBeCompact = height < CompactHeightThreshold;
+
+        if (shouldBeCompact == _compact)
+        {
+            return;
+        }
+
+        _compact = shouldBeCompact;
+
+        // The type has to come down with the artwork. These four carry the
+        // most height of anything in the fixed chrome, and at desktop sizes
+        // they alone put the table over what a phone has.
+        DealerHeadingLabel.FontSize = _compact ? 14 : 17;
+        DealerValueLabel.FontSize = _compact ? 15 : 18;
+        BalanceLabel.FontSize = _compact ? 17 : 22;
+        CurrentBetLabel.FontSize = _compact ? 17 : 22;
+        VariantLabel.FontSize = _compact ? 12 : 15;
+
+        // Seats bake their sizes in at construction, so they have to be built
+        // again rather than adjusted. Bets and cards are held in _hands, not
+        // in the views, so nothing about the round in progress is lost.
+        RebuildHandSlotViews();
+
+        // The dealer's cards are already on the table at the old height.
+        RenderDealerHand(hideHoleCard: _roundInProgress);
+
+        SizeChipTray();
+    }
+
+    /// <summary>
+    /// Rebuilds every seat's view from the current metrics, preserving which
+    /// hand is selected and which is being played.
+    /// </summary>
+    private void RebuildHandSlotViews()
+    {
+        _handSlotViews.Clear();
+        PlayerHandsLayout.Children.Clear();
+
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            var (container, view) = CreateHandSlotView(i);
+            _handSlotViews.Add(view);
+            PlayerHandsLayout.Children.Add(container);
+        }
+
+        ApplyHandSlotArc();
+
+        for (var i = 0; i < _hands.Count; i++)
+        {
+            RenderHandSlot(i);
+            UpdateHandSlotBetDisplay(i);
+        }
+
+        RefreshHandSlotHighlights();
+        UpdateWarUiVisibility();
+    }
+
+    /// <summary>
+    /// Sizes the chips so the whole tray fits the width without scrolling.
+    ///
+    /// It must not scroll: the tray used to sit in a horizontal ScrollView,
+    /// and a ScrollView's own pan gesture beats a child's PanGestureRecognizer
+    /// on iOS and Android. That is why chips could be dragged with a mouse on
+    /// Windows but only tapped on a phone - the drag never reached them.
+    /// </summary>
+    private void SizeChipTray()
+    {
+        var chips = ChipButtonsLayout.Children.OfType<Image>().ToList();
+
+        if (chips.Count == 0 || Width <= 0)
+        {
+            return;
+        }
+
+        // What the row has to fit in: the page width, less its padding, less
+        // the Clear/All In buttons and the action buttons sharing the rail.
+        const double railFurniture = 300;
+        var available = Width - 28 - railFurniture;
+        var perChip = available / chips.Count;
+
+        // Clamped: never so small it cannot be hit (44pt is the smallest
+        // comfortable touch target), never larger than it looked on desktop.
+        // 40pt floor: below that a chip stops being a reliable touch
+        // target. The ceiling drops on a short screen, where the rail's
+        // height is competing with the seats for the same points.
+        var size = Math.Clamp(perChip - 8, 40, _compact ? 46 : 54);
+
+        foreach (var chip in chips)
+        {
+            chip.WidthRequest = size;
+            chip.HeightRequest = size;
+        }
+    }
+
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+
+        ApplyAdaptiveMetrics(height);
+        SizeChipTray();
+    }
+
+    /// <summary>
+    /// Bends the row of seats into the table's own curve. The felt art is
+    /// drawn in perspective with the rail dipping lowest at the centre, so
+    /// the middle seat sits lowest and each one further out is lifted
+    /// progressively higher to follow it.
+    ///
+    /// Done with bottom margins against PlayerHandsLayout's AlignItems="End"
+    /// rather than with TranslationY, because the chip-drag hit-test
+    /// measures each slot's layout Bounds (see GetAbsolutePosition) and a
+    /// render transform wouldn't move those - the seats would look moved but
+    /// still catch a dropped chip at their old positions.
+    ///
+    /// Re-walks every seat rather than positioning one, so it can just be
+    /// called again after anything changes the row - including a split
+    /// inserting a brand new hand into the middle of it.
+    /// </summary>
+    private void ApplyHandSlotArc()
+    {
+        var count = PlayerHandsLayout.Children.Count;
+
+        for (var i = 0; i < count; i++)
+        {
+            if (PlayerHandsLayout.Children[i] is not View seat)
+            {
+                continue;
+            }
+
+            // 0 for the middle seat, 1 for the outermost ones. A single
+            // hand is the middle seat by definition, and would divide by
+            // zero here otherwise.
+            var centre = (count - 1) / 2.0;
+            var distanceFromCentre = count == 1 ? 0 : Math.Abs(i - centre) / centre;
+
+            seat.Margin = new Thickness(4, 0, 4, distanceFromCentre * HandSlotArcLift);
+        }
     }
 
     /// <summary>
@@ -501,10 +701,19 @@ public partial class MainPage : ContentPage
         // A single chip image (whichever denomination the bet amount maps
         // to) plus a plain "Bet: $X" label - built/rebuilt by
         // UpdateHandSlotBetDisplay.
-        var chipImage = new Image { HeightRequest = 32, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
-        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#E6F3C8"), HorizontalOptions = LayoutOptions.Center, FontSize = 14, FontFamily = AppFonts.Display };
-        var valueLabel = new Label { Text = "", TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, FontSize = 16, FontFamily = AppFonts.Display };
-        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFC400"), HorizontalOptions = LayoutOptions.Center, FontSize = 13, FontFamily = AppFonts.Display };
+        // The chip picture is the first thing to go on a short screen: it is
+        // decoration, the bet is already written underneath it in words, and
+        // its 32pt is most of what a phone is missing.
+        var chipImage = new Image
+        {
+            HeightRequest = 32,
+            Aspect = Aspect.AspectFit,
+            HorizontalOptions = LayoutOptions.Center,
+            IsVisible = !_compact,
+        };
+        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#E6F3C8"), HorizontalOptions = LayoutOptions.Center, FontSize = _compact ? 12 : 14, FontFamily = AppFonts.Display };
+        var valueLabel = new Label { Text = "", TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, FontSize = _compact ? 14 : 16, FontFamily = AppFonts.Display };
+        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFC400"), HorizontalOptions = LayoutOptions.Center, FontSize = _compact ? 11 : 13, FontFamily = AppFonts.Display };
 
         var content = new VerticalStackLayout
         {
@@ -768,7 +977,11 @@ public partial class MainPage : ContentPage
         switch (e.StatusType)
         {
             case GestureStatus.Started:
-                if (_roundInProgress)
+                // One drag at a time. A second finger landing on another
+                // chip would otherwise overwrite _dragGhostOrigin and the
+                // ghost's image mid-flight, so the first chip's ghost would
+                // fly home to the wrong place.
+                if (_roundInProgress || _isDraggingChip)
                 {
                     return;
                 }
@@ -803,13 +1016,18 @@ public partial class MainPage : ContentPage
                 break;
 
             case GestureStatus.Completed:
+                // Restore before the guard, never after it. This chip was
+                // faded on its own Started, and a drag that has already
+                // been ended elsewhere still has to hand its chip back -
+                // otherwise it sits at 0.35 for the rest of the round.
+                chipImage.Opacity = 1;
+
                 if (!_isDraggingChip)
                 {
                     return;
                 }
 
                 _isDraggingChip = false;
-                chipImage.Opacity = 1;
 
                 var targetHandIndex = _dragHoverHandIndex;
                 var targetIsWar = _dragHoverIsWar;
@@ -829,8 +1047,8 @@ public partial class MainPage : ContentPage
                 break;
 
             case GestureStatus.Canceled:
-                _isDraggingChip = false;
                 chipImage.Opacity = 1;
+                _isDraggingChip = false;
                 _dragHoverHandIndex = -1;
                 _dragHoverIsWar = false;
                 RefreshHandSlotHighlights();
@@ -878,7 +1096,10 @@ public partial class MainPage : ContentPage
         // after IsVisible flips true, before the next layout pass - so use
         // its known fixed WidthRequest/HeightRequest (see MainPage.xaml)
         // rather than the live Width/Height for this center calculation.
-        const double dragGhostSize = 56;
+        // Read from the ghost itself rather than repeating its size here -
+        // this was hard-coded to 56 while the XAML said 58, so every hover
+        // test was centred a point up and left of the real chip.
+        var dragGhostSize = DragGhostImage.WidthRequest;
         var ghostCenter = new Point(
             DragGhostImage.TranslationX + dragGhostSize / 2,
             DragGhostImage.TranslationY + dragGhostSize / 2);
@@ -1583,7 +1804,7 @@ public partial class MainPage : ContentPage
             {
                 var showFaceDown = hideDealerHoleCard && round == 1;
                 var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[round]);
-                await DealAnimatedCard(DealerCardsLayout, imageFile, 130);
+                await DealAnimatedCard(DealerCardsLayout, imageFile, DealerCardHeight);
                 await Task.Delay(CardDealStaggerMs);
             }
         }
@@ -1899,7 +2120,7 @@ public partial class MainPage : ContentPage
             await Task.Delay(CardDealStaggerMs);
         }
 
-        await DealAnimatedCard(DealerCardsLayout, CardBackFile, 130); // the dealer's second card stays hidden as the hole card
+        await DealAnimatedCard(DealerCardsLayout, CardBackFile, DealerCardHeight); // the dealer's second card stays hidden as the hole card
         UpdateDealerValueLabel(hideHoleCard: true);
     }
 
@@ -2074,6 +2295,7 @@ public partial class MainPage : ContentPage
         var (container, view) = CreateHandSlotView(insertIndex);
         _handSlotViews.Insert(insertIndex, view);
         PlayerHandsLayout.Children.Insert(insertIndex, container);
+        ApplyHandSlotArc();
 
         UpdateBalanceText();
         UpdateHandSlotBetDisplay(_activeHandIndex);
@@ -2166,6 +2388,19 @@ public partial class MainPage : ContentPage
     /// against that one shared dealer hand, applies every hand's result to
     /// the balance, and resets the table so a new round of bets can be placed.
     /// </summary>
+    /// <summary>Starts filling the rewarded video the bust-out rescue needs, well before it could be asked for.</summary>
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+
+        // Start filling a rewarded video now, not when the player busts out -
+        // one that only starts loading at the moment it is needed will not be
+        // ready in time, and ChipRescue treats "not ready" as "do not offer",
+        // so the rescue would simply never appear. Cheap and idempotent: the
+        // implementation no-ops when one is already loaded or in flight.
+        AppServices.Ads.PreloadRewardedAd();
+    }
+
     private async Task EndRound()
     {
         if (_deck is null)
@@ -2325,6 +2560,80 @@ public partial class MainPage : ContentPage
             _pendingDeckCount = null;
             _pendingHandCount = null;
         }
+
+        await OfferChipRescueIfBustedOut();
+    }
+
+    /// <summary>
+    /// When the round just played leaves the player unable to place even the
+    /// table minimum, offer to trade a rewarded video for a fresh stake -
+    /// see BlackjackApp.core.Services.ChipRescue for the rules, which live
+    /// there so they are testable without an ad network.
+    ///
+    /// Only ever called at the end of a round, and only ever as an offer. The
+    /// player is never shown an ad they did not ask for, and declining leaves
+    /// them exactly where they were.
+    /// </summary>
+    private async Task OfferChipRescueIfBustedOut()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+
+        var status = ChipRescue.GetStatus(
+            _wallet.Balance,
+            GameProgressStorage.LoadLastChipRescue(),
+            GameProgressStorage.LoadChipRescuesOnThatDay(),
+            today,
+            AppServices.Ads.IsRewardedAdReady);
+
+        if (!status.CanWatch)
+        {
+            // Out of chips with nothing to offer - out of watches for today,
+            // or no ad loaded. Say so rather than leaving them staring at a
+            // table they cannot bet on with no explanation.
+            if (ChipRescue.IsBustedOut(_wallet.Balance))
+            {
+                ResultLabel.Text = "Out of chips - your daily bonus is waiting in the menu.";
+            }
+
+            return;
+        }
+
+        var watch = await DisplayAlertAsync(
+            "Out of Chips",
+            $"Watch a short video for ${status.Reward:N0} in chips?"
+            + $"\n\n{status.WatchesRemainingToday} of {ChipRescue.MaxWatchesPerDay} left today.",
+            "Watch",
+            "No Thanks");
+
+        if (!watch)
+        {
+            ResultLabel.Text = "Out of chips - your daily bonus is waiting in the menu.";
+            return;
+        }
+
+        var earned = await AppServices.Ads.ShowRewardedAdAsync();
+
+        if (!earned)
+        {
+            // Either they closed it early or it failed to show. Paying out
+            // anyway would pay for skipped ads, so it does not - but the
+            // watch is not counted against their daily cap either, since
+            // they did not actually get anything for it.
+            ResultLabel.Text = "No chips added - the video wasn't finished.";
+            return;
+        }
+
+        _wallet.Add(ChipRescue.RewardPerAd);
+        GameProgressStorage.SaveBalance(_wallet.Balance);
+
+        var (watchedOn, countThatDay) = ChipRescue.RecordWatch(
+            GameProgressStorage.LoadLastChipRescue(),
+            GameProgressStorage.LoadChipRescuesOnThatDay(),
+            today);
+        GameProgressStorage.SaveChipRescue(watchedOn, countThatDay);
+
+        UpdateBalanceText();
+        ResultLabel.Text = $"+${ChipRescue.RewardPerAd:N0} in chips. Good luck.";
     }
 
     /// <summary>
@@ -2471,7 +2780,7 @@ public partial class MainPage : ContentPage
         {
             var showFaceDown = i == 1;
             var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[i]);
-            DealerCardsLayout.Children.Add(CreateCardImage(imageFile, 130));
+            DealerCardsLayout.Children.Add(CreateCardImage(imageFile, DealerCardHeight));
         }
 
         UpdateDealerValueLabel(hideHoleCard: true);
@@ -2486,7 +2795,7 @@ public partial class MainPage : ContentPage
 
         for (var i = dealerCardsBeforePlay; i < _dealerHand.Cards.Count; i++)
         {
-            await DealAnimatedCard(DealerCardsLayout, CardImageFile(_dealerHand.Cards[i]), 130);
+            await DealAnimatedCard(DealerCardsLayout, CardImageFile(_dealerHand.Cards[i]), DealerCardHeight);
             UpdateDealerValueLabel(hideHoleCard: false);
             await Task.Delay(CardDealStaggerMs);
         }
@@ -2610,7 +2919,7 @@ public partial class MainPage : ContentPage
         {
             var showFaceDown = hideHoleCard && i == 1;
             var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[i]);
-            DealerCardsLayout.Children.Add(CreateCardImage(imageFile, 130));
+            DealerCardsLayout.Children.Add(CreateCardImage(imageFile, DealerCardHeight));
         }
 
         UpdateDealerValueLabel(hideHoleCard);
@@ -2673,7 +2982,7 @@ public partial class MainPage : ContentPage
         view.ChipImage.Source = ImageSource.FromFile($"chip_{(int)chipValue}.png");
     }
 
-    private void UpdateTotalWageredText() => CurrentBetLabel.Text = $"Total Wagered: ${_hands.Sum(h => h.Bet + h.WarBet):N0}";
+    private void UpdateTotalWageredText() => CurrentBetLabel.Text = $"${_hands.Sum(h => h.Bet + h.WarBet):N0}";
 
     /// <summary>
     /// Deal and the whole chip/Clear/All-In row only make sense before a
@@ -2690,7 +2999,7 @@ public partial class MainPage : ContentPage
         ChipButtonsLayout.IsVisible = !roundInProgress;
     }
 
-    private void UpdateBalanceText() => BalanceLabel.Text = $"Balance: ${_wallet.Balance:N0}";
+    private void UpdateBalanceText() => BalanceLabel.Text = $"${_wallet.Balance:N0}";
 
     private void UpdateVariantLabel() => VariantLabel.Text = _variant.Name;
 
@@ -2705,11 +3014,11 @@ public partial class MainPage : ContentPage
     /// </summary>
     private void UpdateTableColors()
     {
-        var (felt, backdrop, pageBackground, panelAccent) = _variant switch
+        var (felt, backdrop, pageBackground) = _variant switch
         {
-            DoubleDownMadnessVariant => ("felt_red.png", "backdrop_olive.png", "#4A0E00", "#FF9A3C"),
-            WarBlackjackVariant => ("felt_gold.png", "backdrop_blue.png", "#003A54", "#8FD8FF"),
-            _ => ("felt_green.png", "backdrop_purple.png", "#2A4D00", "#FFC400"),
+            DoubleDownMadnessVariant => ("felt_red.png", "backdrop_olive.png", "#4A0E00"),
+            WarBlackjackVariant => ("felt_gold.png", "backdrop_blue.png", "#003A54"),
+            _ => ("felt_green.png", "backdrop_purple.png", "#2A4D00"),
         };
 
         FeltImage.Source = ImageSource.FromFile(felt);
@@ -2720,18 +3029,20 @@ public partial class MainPage : ContentPage
         // darkest edge rather than being a colour in its own right.
         BackgroundColor = Color.FromArgb(pageBackground);
 
-        // The panels keep the translucent-black fill set in MainPage.xaml
-        // (the kit's nameplate look) - only the ring is re-tinted, so it
-        // stays legible against whichever felt is underneath it.
-        var accent = Color.FromArgb(panelAccent);
-        DealerAreaBorder.Stroke = accent;
-        PlayerAreaBorder.Stroke = accent;
-
         // The shoe/discard piles show the same face-down back the dealer's
         // hole card uses, so a variant switch doesn't leave them showing
         // the wrong colour back next to a re-themed table.
         ShoeImage.Source = ImageSource.FromFile(CardBackFile);
         DiscardImage.Source = ImageSource.FromFile(CardBackFile);
+
+        // Each variant's table is printed with its own house rules, so the
+        // printing gets repainted along with the felt underneath it.
+        // Attached here rather than in the constructor because every path
+        // that sets up a table comes through here, so the printing can't end
+        // up unattached on one of them.
+        TableRulesView.Drawable = _tableRules;
+        _tableRules.Lines = _variant.TableRules;
+        TableRulesView.Invalidate();
     }
 
     private static Image CreateCardImage(string imageFile, double height) => new()
@@ -2761,4 +3072,148 @@ public partial class MainPage : ContentPage
         Suit.Spades => "s",
         _ => throw new ArgumentOutOfRangeException(nameof(suit)),
     };
+
+    /// <summary>
+    /// Paints the current variant's house rules across the open felt, the way
+    /// a real table has them screen-printed on it - see IGameVariant.TableRules
+    /// for why the wording lives on the variant rather than here.
+    ///
+    /// Each line is set on its own shallow arc, struck from a circle centred
+    /// far above the table so the line dips lowest in the middle and lifts at
+    /// both ends. That's the same curve the felt art itself is drawn on (its
+    /// rail, and the pools of light marking the seats, both sit lowest at the
+    /// centre), which is what makes the printing look like part of the table
+    /// rather than a caption laid over it - and it's the same curve
+    /// ApplyHandSlotArc bends the row of seats along.
+    ///
+    /// Letters are stepped at a fixed angular advance rather than by their
+    /// real widths, so the text comes out evenly spaced the way screen-printed
+    /// table lettering is. It also avoids having to measure glyphs, which is
+    /// exactly the kind of text metric this codebase has already been bitten
+    /// by (see HandSlotCardsWidth).
+    /// </summary>
+    private sealed class TableRulesDrawable : IDrawable
+    {
+        /// <summary>How far the middle of a line dips below its two ends.</summary>
+        private const float ArcSagitta = 18f;
+
+        private const float HeadlineFontSize = 30f;
+        private const float RuleFontSize = 18f;
+
+        /// <summary>Horizontal step between letters, as a fraction of the font size - wide enough to read as printed-on lettering rather than as a label.</summary>
+        private const float LetterAdvanceRatio = 0.62f;
+
+        private const float LineGap = 16f;
+
+        /// <summary>Kept clear of the seats below, which start where this band ends.</summary>
+        private const float BottomInset = 18f;
+
+        private static readonly Color HeadlineInk = Color.FromRgba(255, 233, 168, 100);
+        private static readonly Color RuleInk = Color.FromRgba(255, 233, 168, 78);
+
+        public IReadOnlyList<string> Lines { get; set; } = [];
+
+        public void Draw(ICanvas canvas, RectF dirtyRect)
+        {
+            if (Lines.Count == 0 || dirtyRect.Width <= 0 || dirtyRect.Height <= 0)
+            {
+                return;
+            }
+
+            // Bebas Neue, the same display face the rest of the table uses -
+            // but named the way the platform knows it, NOT by the MAUI alias.
+            // Drawing into a GraphicsView bypasses MAUI's font registry, so an
+            // alias here would quietly fall back to the system face; see
+            // AppFonts.DisplayFamily. A name the platform still can't resolve
+            // falls back rather than failing, so this needs no guard.
+            canvas.Font = new Microsoft.Maui.Graphics.Font(AppFonts.DisplayFamily);
+
+            // Laid out upwards from the bottom of the band: the printing
+            // belongs just above the seats, leaving the space higher up clear
+            // for round messages. Work out where the LAST line sits first,
+            // then back up to the first one.
+            var spanToLastBaseline = Lines.Count <= 1
+                ? 0f
+                : HeadlineFontSize + LineGap + (Lines.Count - 2) * (RuleFontSize + LineGap);
+            var baseline = dirtyRect.Bottom - BottomInset - spanToLastBaseline;
+
+            for (var i = 0; i < Lines.Count; i++)
+            {
+                var isHeadline = i == 0;
+                var fontSize = isHeadline ? HeadlineFontSize : RuleFontSize;
+
+                canvas.FontColor = isHeadline ? HeadlineInk : RuleInk;
+                canvas.FontSize = fontSize;
+
+                DrawArcedLine(canvas, Lines[i], dirtyRect, baseline, fontSize);
+
+                baseline += fontSize + LineGap;
+            }
+        }
+
+        private static void DrawArcedLine(ICanvas canvas, string line, RectF dirtyRect, float baseline, float fontSize)
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                return;
+            }
+
+            var advance = fontSize * LetterAdvanceRatio;
+            var centreX = dirtyRect.Center.X;
+
+            // Half the line's width is the arc's chord; the radius that gives
+            // it ArcSagitta of dip follows from r = (w2 + s2) / 2s. A
+            // single-character line has no chord to bend, so it just sits flat.
+            var halfWidth = (line.Length - 1) * advance / 2f;
+            var radius = halfWidth <= 0f
+                ? 0f
+                : (halfWidth * halfWidth + ArcSagitta * ArcSagitta) / (2f * ArcSagitta);
+
+            // Anything wider than the table gets set flat rather than bent
+            // into a curve too tight to read.
+            if (radius <= 0f || halfWidth * 2f > dirtyRect.Width)
+            {
+                // Same optical baseline as the arced path below: that one
+                // centres each glyph box ON the baseline, so this has to
+                // too, or a single line falling back on a narrow window
+                // would print noticeably higher than its neighbours.
+                canvas.DrawString(
+                    line,
+                    dirtyRect.X,
+                    baseline - fontSize,
+                    dirtyRect.Width,
+                    fontSize * 1.4f,
+                    Microsoft.Maui.Graphics.HorizontalAlignment.Center,
+                    Microsoft.Maui.Graphics.VerticalAlignment.Center);
+                return;
+            }
+
+            // Circle centred directly above the line's midpoint, so the arc's
+            // lowest point is the middle of the line.
+            var centreY = baseline - radius;
+
+            for (var i = 0; i < line.Length; i++)
+            {
+                var offsetX = (i - (line.Length - 1) / 2f) * advance;
+                var letterY = centreY + MathF.Sqrt(MathF.Max(0f, radius * radius - offsetX * offsetX));
+
+                // Tangent at this point, so each letter stands square to the
+                // curve instead of upright on a sloping line.
+                var tiltDegrees = MathF.Asin(Math.Clamp(offsetX / radius, -1f, 1f)) * 180f / MathF.PI;
+
+                canvas.SaveState();
+                canvas.Translate(centreX + offsetX, letterY);
+                canvas.Rotate(-tiltDegrees);
+                canvas.DrawString(
+                    line[i].ToString(),
+                    -advance,
+                    -fontSize,
+                    advance * 2f,
+                    fontSize * 2f,
+                    Microsoft.Maui.Graphics.HorizontalAlignment.Center,
+                    Microsoft.Maui.Graphics.VerticalAlignment.Center);
+                canvas.RestoreState();
+            }
+        }
+    }
 }

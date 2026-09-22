@@ -122,9 +122,9 @@ public partial class GameMenuPage : ContentPage
     }
 
     private static CheckInStatus CurrentCheckInStatus() => DailyCheckIn.GetStatus(
-        GameProgressStorage.LoadLastCheckIn(),
+        GameProgressStorage.LoadLastCheckInUtc(),
         GameProgressStorage.LoadCheckInStreakDay(),
-        DateOnly.FromDateTime(DateTime.Now));
+        DateTime.UtcNow);
 
     /// <summary>Start menu only - shows Load Game only when there's actually an unfinished round saved (see GameProgressStorage.HasInProgressRound), so it doesn't sit there as a dead button on a normal fresh launch.</summary>
     private void RefreshLoadGameButton()

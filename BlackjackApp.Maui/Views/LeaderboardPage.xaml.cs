@@ -1,5 +1,9 @@
 using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using BlackjackApp.core.Services;
+using BlackjackApp.Maui.Services;
 using Microsoft.Maui.Controls.Shapes;
 
 namespace BlackjackApp.Maui.Views;
@@ -13,10 +17,125 @@ namespace BlackjackApp.Maui.Views;
 /// </summary>
 public partial class LeaderboardPage : ContentPage
 {
+    /// <summary>Cancels an in-flight fetch if the page is closed before it lands, so a slow network cannot write rows into a page nobody is looking at.</summary>
+    private CancellationTokenSource? _fetch;
+
     public LeaderboardPage()
     {
         InitializeComponent();
+
+        // Draw the local board immediately. The online one replaces it when
+        // and if it arrives - the player should never be looking at a spinner
+        // where their own record could already be.
         BuildRows();
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+
+        if (AppServices.Leaderboard.IsConfigured)
+        {
+            _ = LoadOnlineStandingsAsync();
+        }
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+
+        _fetch?.Cancel();
+        _fetch?.Dispose();
+        _fetch = null;
+    }
+
+    /// <summary>
+    /// Replaces the local rows with the global board.
+    ///
+    /// Failure here is silent on purpose: GetTopAsync already turns being
+    /// offline, unreachable or unconfigured into an empty list, and an empty
+    /// list simply leaves the local board on screen. Someone playing on a
+    /// train should see their own record, not an error.
+    /// </summary>
+    private async Task LoadOnlineStandingsAsync()
+    {
+        _fetch?.Cancel();
+        _fetch?.Dispose();
+        _fetch = new CancellationTokenSource();
+
+        var token = _fetch.Token;
+
+        StatusLabel.Text = "Loading the global board...";
+        StatusLabel.IsVisible = true;
+
+        // Re-publish this device's best before reading the board. A submission
+        // made while offline is otherwise lost for good: publishing is only
+        // triggered by a new personal best, so nothing retries until the
+        // player beats themselves again. Re-sending is free - the server keeps
+        // whichever value is higher - and this is the one screen where being
+        // absent from the board is actually visible.
+        var localBest = GameProgressStorage.LoadLocalBestBalance();
+
+        if (localBest > 0)
+        {
+            await AppServices.Leaderboard.SubmitBestBalanceAsync(
+                GameProgressStorage.LoadOnlinePlayerId(),
+                GameProgressStorage.LoadOnlinePlayerName(),
+                localBest,
+                token);
+        }
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var standings = await AppServices.Leaderboard.GetTopAsync(50, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (standings.Count == 0)
+        {
+            StatusLabel.Text = "Couldn't reach the global board - showing your own records.";
+            return;
+        }
+
+        StatusLabel.IsVisible = false;
+        BuildOnlineRows(standings);
+    }
+
+    /// <summary>
+    /// Draws the global board, marking whichever row belongs to this install.
+    /// Matched on player id rather than name, since names are editable and
+    /// nothing stops two players choosing the same one.
+    /// </summary>
+    private void BuildOnlineRows(System.Collections.Generic.IReadOnlyList<LeaderboardStanding> standings)
+    {
+        RowsLayout.Children.Clear();
+        EmptyLabel.IsVisible = false;
+        RowsLayout.IsVisible = true;
+
+        var localPlayerId = GameProgressStorage.LoadOnlinePlayerId();
+
+        for (var i = 0; i < standings.Count; i++)
+        {
+            var standing = standings[i];
+
+            RowsLayout.Children.Add(CreateRow(
+                rank: i + 1,
+                new LeaderboardEntry
+                {
+                    PlayerName = standing.PlayerId == localPlayerId
+                        ? $"{standing.PlayerName} (you)"
+                        : standing.PlayerName,
+                    HighestBalance = standing.BestBalance,
+                    AchievedAtUtc = standing.AchievedAtUtc,
+                },
+                isLocalPlayer: standing.PlayerId == localPlayerId));
+        }
     }
 
     /// <summary>(Re)builds one row per leaderboard entry, highest balance first - or shows EmptyLabel instead if there's nothing recorded yet.</summary>
@@ -35,8 +154,8 @@ public partial class LeaderboardPage : ContentPage
         }
     }
 
-    /// <summary>One ranked row: place, player name, their record balance, and the local date/time they reached it.</summary>
-    private static Border CreateRow(int rank, LeaderboardEntry entry)
+    /// <summary>One ranked row: place, player name, their record balance, and the local date/time they reached it. isLocalPlayer rings this install's own row on the global board, where it might be anywhere down the list.</summary>
+    private static Border CreateRow(int rank, LeaderboardEntry entry, bool isLocalPlayer = false)
     {
         var rankLabel = new Label
         {
@@ -104,8 +223,8 @@ public partial class LeaderboardPage : ContentPage
 
         return new Border
         {
-            Stroke = rank == 1 ? Color.FromArgb("#FFC400") : Color.FromArgb("#6F7D55"),
-            StrokeThickness = 1,
+            Stroke = rank == 1 || isLocalPlayer ? Color.FromArgb("#FFC400") : Color.FromArgb("#6F7D55"),
+            StrokeThickness = isLocalPlayer ? 2 : 1,
             StrokeShape = new RoundRectangle { CornerRadius = 8 },
             BackgroundColor = Color.FromArgb("#59000000"),
             Padding = 12,
