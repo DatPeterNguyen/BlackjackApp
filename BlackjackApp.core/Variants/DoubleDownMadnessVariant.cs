@@ -25,6 +25,14 @@ public class DoubleDownMadnessVariant : IGameVariant
 {
     public string Name => "Black Double Down Madness";
 
+    /// <inheritdoc />
+    public IReadOnlyList<string> TableRules { get; } =
+    [
+        "BLACKJACK PAYS 3 TO 2",
+        "DOUBLE DOWN ON EVERY CARD",
+        "DEALER HITS SOFT 17 - DEALER 22 PUSHES",
+    ];
+
     /// <summary>Deals the opening cards: ONE card to the player, two to the dealer.</summary>
     public void DealInitialCards(Deck deck, Hand playerHand, Hand dealerHand)
     {

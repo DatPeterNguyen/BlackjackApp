@@ -27,6 +27,14 @@ public class WarBlackjackVariant : IGameVariant
 
     public string Name => "War Blackjack";
 
+    /// <inheritdoc />
+    public IReadOnlyList<string> TableRules { get; } =
+    [
+        "BLACKJACK PAYS 3 TO 2",
+        "INCREASE BLACKJACK BET WITH WAR",
+        "WAR PAYS 1 TO 1 - ACE IS LOW - DEALER WINS TIES",
+    ];
+
     /// <summary>Deals just the dealer's single shared War card - call once per round, compared against every player hand's own War card.</summary>
     public void DealDealerWarCard(Deck deck, Hand dealerHand) => dealerHand.AddCard(deck.Draw());
 

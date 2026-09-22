@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BlackjackApp.core.Models;
 
 namespace BlackjackApp.core.Variants;
@@ -9,6 +10,21 @@ namespace BlackjackApp.core.Variants;
 public interface IGameVariant
 {
     string Name { get; }
+
+    /// <summary>
+    /// The house rules this variant actually enforces, worded the way a real
+    /// table has them printed on its felt - the UI paints these across the
+    /// table (see MainPage's TableRulesDrawable).
+    ///
+    /// Lives on the variant rather than in the UI so the printing can't
+    /// drift away from the rules the same class goes on to enforce: the
+    /// design doc's reference photos print "INSURANCE PAYS 2 TO 1" on the
+    /// Double Down Madness and War tables, but neither of those variants
+    /// offers insurance here (OffersInsurance), so neither prints it.
+    ///
+    /// First line is the headline and is painted largest.
+    /// </summary>
+    IReadOnlyList<string> TableRules { get; }
 
     /// <summary>
     /// Deals each variant's own opening hand shape from the given shoe -

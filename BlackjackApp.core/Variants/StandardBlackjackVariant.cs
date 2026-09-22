@@ -13,6 +13,14 @@ public class StandardBlackjackVariant : IGameVariant
 {
     public string Name => "Standard Blackjack";
 
+    /// <inheritdoc />
+    public IReadOnlyList<string> TableRules { get; } =
+    [
+        "BLACKJACK PAYS 3 TO 2",
+        "DEALER MUST HIT SOFT 17",
+        "INSURANCE PAYS 2 TO 1",
+    ];
+
     public void DealInitialCards(Deck deck, Hand playerHand, Hand dealerHand)
     {
         // Real casinos deal one card at a time, alternating player/dealer,
