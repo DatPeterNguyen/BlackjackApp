@@ -164,13 +164,22 @@ public partial class MainPage : ContentPage
     // Full sizes are the desktop/tablet values; compact ones are what a phone
     // in landscape can actually afford.
 
+    // Three tiers, not two. Portrait is its own case and deliberately the
+    // most generous: a phone held upright has over 800pt of height against
+    // under 400 on its side, and that headroom is the whole reason the type
+    // can be readable there. Landscape on a phone stays the tightest
+    // arrangement, because it genuinely is the tightest space.
+
     private const double DealerCardHeightFull = 130;
+    private const double DealerCardHeightPortrait = 118;
     private const double DealerCardHeightCompact = 72;
 
     private const double HandSlotCardHeightFull = 56;
+    private const double HandSlotCardHeightPortrait = 62;
     private const double HandSlotCardHeightCompact = 40;
 
     private const double HandSlotCardsWidthFull = 140;
+    private const double HandSlotCardsWidthPortrait = 152;
     private const double HandSlotCardsWidthCompact = 116;
 
     /// <summary>Below this height in device-independent points the table switches to compact metrics. An iPhone 15 is 393pt tall in landscape; an iPad is 834.</summary>
@@ -179,14 +188,17 @@ public partial class MainPage : ContentPage
     /// <summary>Whether the table is currently laid out for a short screen.</summary>
     private bool _compact;
 
+    /// <summary>Whether the screen is taller than it is wide, which on a phone is the arrangement worth optimising for.</summary>
+    private bool _portrait;
+
     /// <summary>Dealer card image height - see the metrics block above.</summary>
-    private double DealerCardHeight => _compact ? DealerCardHeightCompact : DealerCardHeightFull;
+    private double DealerCardHeight => _portrait ? DealerCardHeightPortrait : _compact ? DealerCardHeightCompact : DealerCardHeightFull;
 
     /// <summary>Card image height inside a hand slot - smaller than the dealer's so several fit across one slot's width.</summary>
-    private double HandSlotCardHeight => _compact ? HandSlotCardHeightCompact : HandSlotCardHeightFull;
+    private double HandSlotCardHeight => _portrait ? HandSlotCardHeightPortrait : _compact ? HandSlotCardHeightCompact : HandSlotCardHeightFull;
 
     /// <summary>Explicit width for a hand slot's card row - a Fill request alone wasn't reliably resolving to a real width inside the stack.</summary>
-    private double HandSlotCardsWidth => _compact ? HandSlotCardsWidthCompact : HandSlotCardsWidthFull;
+    private double HandSlotCardsWidth => _portrait ? HandSlotCardsWidthPortrait : _compact ? HandSlotCardsWidthCompact : HandSlotCardsWidthFull;
 
     /// <summary>Outer hand slot Border width - HandSlotCardsWidth plus room for its Padding/Border.</summary>
     private double HandSlotBorderWidth => HandSlotCardsWidth + 16;
@@ -510,6 +522,48 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
+    /// Moves the pieces that cannot simply shrink to fit a narrow screen.
+    ///
+    /// Landscape puts three things side by side across the top - shoe,
+    /// dealer, limits and menu - which needs about 700pt. Portrait has 393.
+    /// So in portrait the dealer drops into the strip's second row, beneath
+    /// the other two, rather than being squeezed between them. The rail does
+    /// the same: chips and action buttons sit side by side when there is room
+    /// and stack when there is not.
+    ///
+    /// Both spare rows are Auto, so they collapse to nothing in landscape and
+    /// this costs no height there.
+    /// </summary>
+    private void ApplyOrientationLayout()
+    {
+        // Dealer: overlaid across the whole strip in landscape, below the
+        // shoe and menu row in portrait.
+        Grid.SetRow(DealerStack, _portrait ? 1 : 0);
+        Grid.SetRowSpan(DealerStack, _portrait ? 1 : 2);
+
+        // Chips take the full width in portrait and wrap onto as many lines
+        // as they need; the buttons move to their own row underneath.
+        Grid.SetColumnSpan(ChipButtonsLayout, _portrait ? 2 : 1);
+
+        Grid.SetRow(ActionButtonsLayout, _portrait ? 1 : 0);
+        Grid.SetColumn(ActionButtonsLayout, 0);
+        Grid.SetColumnSpan(ActionButtonsLayout, _portrait ? 2 : 1);
+
+        if (!_portrait)
+        {
+            Grid.SetColumn(ActionButtonsLayout, 1);
+        }
+
+        ActionButtonsLayout.JustifyContent = _portrait ? FlexJustify.Center : FlexJustify.End;
+        ChipButtonsLayout.JustifyContent = FlexJustify.Center;
+
+        // The seats only follow the table's curve when they are on one line.
+        // In portrait they wrap onto several, where a per-index lift is
+        // meaningless - see ApplyHandSlotArc.
+        ApplyHandSlotArc();
+    }
+
+    /// <summary>
     /// Re-picks the table's metrics for the space actually available, and
     /// rebuilds anything that was sized with the old ones.
     ///
@@ -530,23 +584,31 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        var shouldBeCompact = height < CompactHeightThreshold;
+        // Portrait is decided by shape, not size. Compact is only ever about a
+        // landscape table being short - a phone held upright has height to
+        // spare, so it never wants the cramped arrangement.
+        var shouldBePortrait = height > Width && Width > 0;
+        var shouldBeCompact = !shouldBePortrait && height < CompactHeightThreshold;
 
-        if (shouldBeCompact == _compact)
+        if (shouldBePortrait == _portrait && shouldBeCompact == _compact)
         {
             return;
         }
 
+        _portrait = shouldBePortrait;
         _compact = shouldBeCompact;
+
+        ApplyOrientationLayout();
 
         // The type has to come down with the artwork. These four carry the
         // most height of anything in the fixed chrome, and at desktop sizes
         // they alone put the table over what a phone has.
-        DealerHeadingLabel.FontSize = _compact ? 14 : 17;
-        DealerValueLabel.FontSize = _compact ? 15 : 18;
-        BalanceLabel.FontSize = _compact ? 17 : 22;
-        CurrentBetLabel.FontSize = _compact ? 17 : 22;
-        VariantLabel.FontSize = _compact ? 12 : 15;
+        DealerHeadingLabel.FontSize = _portrait ? 22 : _compact ? 14 : 17;
+        DealerValueLabel.FontSize = _portrait ? 24 : _compact ? 15 : 18;
+        BalanceLabel.FontSize = _portrait ? 26 : _compact ? 17 : 22;
+        CurrentBetLabel.FontSize = _portrait ? 26 : _compact ? 17 : 22;
+        VariantLabel.FontSize = _portrait ? 17 : _compact ? 12 : 15;
+        ResultLabel.FontSize = _portrait ? 26 : _compact ? 17 : 21;
 
         // Seats bake their sizes in at construction, so they have to be built
         // again rather than adjusted. Bets and cards are held in _hands, not
@@ -617,10 +679,14 @@ public partial class MainPage : ContentPage
         // height is competing with the seats for the same points.
         var size = Math.Clamp(perChip - 8, 40, _compact ? 46 : 54);
 
+        // FlexLayout has no Spacing, so the gap between chips is a margin.
+        var gap = new Thickness(3);
+
         foreach (var chip in chips)
         {
             chip.WidthRequest = size;
             chip.HeightRequest = size;
+            chip.Margin = gap;
         }
     }
 
@@ -656,6 +722,16 @@ public partial class MainPage : ContentPage
         {
             if (PlayerHandsLayout.Children[i] is not View seat)
             {
+                continue;
+            }
+
+            // Flat in portrait. The lift is meant to follow the curve of the
+            // table's near edge across a single row of seats; once they wrap
+            // onto several rows a per-index lift means nothing and just makes
+            // the rows look misaligned.
+            if (_portrait)
+            {
+                seat.Margin = new Thickness(4, 0, 4, 0);
                 continue;
             }
 
@@ -706,14 +782,15 @@ public partial class MainPage : ContentPage
         // its 32pt is most of what a phone is missing.
         var chipImage = new Image
         {
-            HeightRequest = 32,
+            HeightRequest = _portrait ? 40 : 32,
             Aspect = Aspect.AspectFit,
             HorizontalOptions = LayoutOptions.Center,
+            // Kept in portrait, where there is room for it.
             IsVisible = !_compact,
         };
-        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#E6F3C8"), HorizontalOptions = LayoutOptions.Center, FontSize = _compact ? 12 : 14, FontFamily = AppFonts.Display };
-        var valueLabel = new Label { Text = "", TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, FontSize = _compact ? 14 : 16, FontFamily = AppFonts.Display };
-        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFC400"), HorizontalOptions = LayoutOptions.Center, FontSize = _compact ? 11 : 13, FontFamily = AppFonts.Display };
+        var betLabel = new Label { Text = "Bet: $0", TextColor = Color.FromArgb("#E6F3C8"), HorizontalOptions = LayoutOptions.Center, FontSize = _portrait ? 18 : _compact ? 12 : 14, FontFamily = AppFonts.Display };
+        var valueLabel = new Label { Text = "", TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, FontSize = _portrait ? 20 : _compact ? 14 : 16, FontFamily = AppFonts.Display };
+        var resultLabel = new Label { Text = "", TextColor = Color.FromArgb("#FFC400"), HorizontalOptions = LayoutOptions.Center, FontSize = _portrait ? 16 : _compact ? 11 : 13, FontFamily = AppFonts.Display };
 
         var content = new VerticalStackLayout
         {

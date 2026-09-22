@@ -13,14 +13,23 @@
 	<array>
 		<string>arm64</string>
 	</array>
-	<!-- Landscape only: the table is laid out as one wide composition (see MainPage.xaml) and has no portrait form. -->
+	<!--
+		Both orientations. The table now has a portrait form as well as a
+		landscape one, and portrait is the better fit on a phone: it has
+		over 800pt of height to spend where landscape has under 400, which
+		is what let the type grow to a readable size. See MainPage.xaml.cs
+		ApplyAdaptiveMetrics for how the table rearranges itself.
+	-->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
+		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

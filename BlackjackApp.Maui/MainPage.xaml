@@ -97,10 +97,19 @@
                 stack, which is InputTransparent anyway so it can't swallow
                 a tap meant for the menu.
             -->
-            <Grid Grid.Row="0" Padding="14,6,14,0">
+            <!--
+                Two rows, the second of which collapses to nothing when it is
+                not used. In landscape the dealer spans both and sits centred
+                across the whole strip, overlaid between the shoe and the
+                right-hand cluster exactly as before. In portrait there is no
+                room to put three things side by side in 393pt, so the dealer
+                drops into the second row underneath them. MainPage.xaml.cs
+                ApplyAdaptiveMetrics moves it.
+            -->
+            <Grid x:Name="TopStrip" Grid.Row="0" Padding="14,6,14,0" RowDefinitions="Auto,Auto">
 
-                <VerticalStackLayout Spacing="4" VerticalOptions="Start" HorizontalOptions="Fill"
-                                     InputTransparent="True">
+                <VerticalStackLayout x:Name="DealerStack" Grid.Row="0" Grid.RowSpan="2" Spacing="4"
+                                     VerticalOptions="Start" HorizontalOptions="Fill" InputTransparent="True">
                     <Label x:Name="DealerHeadingLabel" Text="DEALER" Style="{StaticResource FeltHeading}" FontSize="17" HorizontalOptions="Center"/>
                     <FlexLayout x:Name="DealerCardsLayout" Direction="Row" Wrap="Wrap"
                                 JustifyContent="Center" AlignItems="Center" HorizontalOptions="Fill"/>
@@ -108,7 +117,7 @@
                            FontSize="18" HorizontalOptions="Center"/>
                 </VerticalStackLayout>
 
-                <VerticalStackLayout Spacing="1" VerticalOptions="Start" HorizontalOptions="Start">
+                <VerticalStackLayout x:Name="ShoeColumn" Grid.Row="0" Spacing="1" VerticalOptions="Start" HorizontalOptions="Start">
                     <Image x:Name="ShoeImage" Source="back_red.png" HeightRequest="62" Aspect="AspectFit"/>
                     <Label Text="SHOE" Style="{StaticResource FeltHeading}" TextColor="#E6F3C8"
                            FontSize="13" HorizontalOptions="Center"/>
@@ -116,7 +125,7 @@
                            FontSize="15" HorizontalOptions="Center"/>
                 </VerticalStackLayout>
 
-                <HorizontalStackLayout Spacing="10" VerticalOptions="Start" HorizontalOptions="End">
+                <HorizontalStackLayout x:Name="TopRightCluster" Grid.Row="0" Spacing="10" VerticalOptions="Start" HorizontalOptions="End">
                     <!-- The reference table prints its limits on a plate up here rather than tucking them under the shoe, and it's the first thing a player checks before sizing a bet. -->
                     <Border Style="{StaticResource ReadoutPlate}" Padding="11,5" VerticalOptions="Start">
                         <VerticalStackLayout Spacing="0">
@@ -250,7 +259,7 @@
                 is what keeps them out of it. They aren't chips, so dragging
                 doesn't apply to them anyway.
             -->
-            <Grid Grid.Row="2" Padding="14,2,14,2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <Grid x:Name="RailGrid" Grid.Row="2" Padding="14,2,14,2" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="12">
 
                 <!--
                     NOT in a ScrollView, deliberately. A ScrollView's own pan
@@ -261,8 +270,8 @@
                     chip. MainPage.xaml.cs SizeChipTray shrinks the chips to
                     fit the width instead of scrolling them.
                 -->
-                <HorizontalStackLayout Grid.Column="0" x:Name="ChipButtonsLayout" Spacing="6"
-                                       HorizontalOptions="Start" VerticalOptions="Center">
+                <FlexLayout x:Name="ChipButtonsLayout" Grid.Row="0" Grid.Column="0" Direction="Row" Wrap="Wrap"
+                            JustifyContent="Center" AlignItems="Center" VerticalOptions="Center">
                         <Image Source="chip_1.png" ClassId="1" WidthRequest="54" HeightRequest="54" Aspect="AspectFit">
                             <Image.GestureRecognizers>
                                 <PanGestureRecognizer PanUpdated="ChipImage_OnPanUpdated"/>
@@ -328,7 +337,7 @@
                         <Button x:Name="AllInButton" Text="All In" Style="{StaticResource ChipTrayButton}"
                                 Background="{StaticResource GoldButtonBrush}" TextColor="{StaticResource GoldInk}"
                                 Margin="2" Clicked="AllInButton_OnClicked"/>
-                </HorizontalStackLayout>
+                </FlexLayout>
 
                 <!--
                     Hit/Stand/Double/Split are the kit's own button art
@@ -340,8 +349,8 @@
                     never on screen together - Deal only shows between
                     rounds, Hit only during one (see SetRoundInProgress).
                 -->
-                <ScrollView Grid.Column="1" Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                    <HorizontalStackLayout Spacing="6" HorizontalOptions="End" Padding="0,2,0,2">
+                <FlexLayout x:Name="ActionButtonsLayout" Grid.Row="0" Grid.Column="1" Direction="Row" Wrap="Wrap"
+                            JustifyContent="End" AlignItems="Center">
                         <Button x:Name="DealButton" Text="DEAL" Style="{StaticResource GreenButton}"
                                 WidthRequest="112" FontSize="22" Clicked="DealButton_OnClicked"/>
                         <!-- No IsEnabled="False" here - RefreshActionButtonVisibility (code-behind) is the sole gatekeeper now, hiding each one entirely via IsVisible rather than graying it out, so it also needs to start out enabled. -->
@@ -367,8 +376,7 @@
                                 WidthRequest="108" IsVisible="False" Clicked="InsuranceButton_OnClicked"/>
                         <Button x:Name="DeclineInsuranceButton" Text="NO INSURANCE" Style="{StaticResource RedButton}"
                                 WidthRequest="146" FontSize="17" IsVisible="False" Clicked="DeclineInsuranceButton_OnClicked"/>
-                    </HorizontalStackLayout>
-                </ScrollView>
+                </FlexLayout>
             </Grid>
 
             <!--
