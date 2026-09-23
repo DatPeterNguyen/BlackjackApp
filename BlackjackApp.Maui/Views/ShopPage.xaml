@@ -28,8 +28,8 @@
             the content layer below opts back in, so only the controls move
             inwards. .NET 10 made layouts inset themselves by default.
         -->
-        <Image Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
-        <Image Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
+        <!-- One opaque layer rather than two translucent ones - see MainPage.xaml. -->
+        <Image Source="table_green.png" Aspect="AspectFill" InputTransparent="True"/>
 
         <ScrollView SafeAreaEdges="Container">
             <VerticalStackLayout Padding="24" Spacing="12" VerticalOptions="Center">

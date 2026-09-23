@@ -35,8 +35,17 @@
             The content layer below opts back in, so only the controls
             actually move inwards.
         -->
-        <Image x:Name="BackdropImage" Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
-        <Image x:Name="FeltImage" Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
+        <!--
+            One opaque layer, not two translucent ones. The backdrop and the
+            felt used to be separate Images stacked on top of each other, both
+            carrying alpha, so every animated frame blended two full-screen
+            2048x1536 layers before anything else was drawn. They are only ever
+            shown in three fixed pairings, so those pairings are now baked into
+            one image per variant - the same pixels, composited once at build
+            time instead of sixty times a second. Being fully opaque also lets
+            the compositor skip whatever is behind it.
+        -->
+        <Image x:Name="TableImage" Source="table_green.png" Aspect="AspectFill" InputTransparent="True"/>
 
         <!--
             The table, laid out the way the design doc's reference table is:

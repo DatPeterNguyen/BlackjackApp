@@ -3508,19 +3508,21 @@ public partial class MainPage : ContentPage
     /// </summary>
     private void UpdateTableColors()
     {
-        var (felt, backdrop, pageBackground) = _variant switch
+        // One image per variant, each already carrying its backdrop and its
+        // page colour baked underneath the felt - see the note in MainPage.xaml
+        // for why they are no longer three separate layers.
+        var (table, pageBackground) = _variant switch
         {
-            DoubleDownMadnessVariant => ("felt_red.png", "backdrop_olive.png", "#4A0E00"),
-            WarBlackjackVariant => ("felt_gold.png", "backdrop_blue.png", "#003A54"),
-            _ => ("felt_green.png", "backdrop_purple.png", "#2A4D00"),
+            DoubleDownMadnessVariant => ("table_red.png", "#4A0E00"),
+            WarBlackjackVariant => ("table_gold.png", "#003A54"),
+            _ => ("table_green.png", "#2A4D00"),
         };
 
-        FeltImage.Source = ImageSource.FromFile(felt);
-        BackdropImage.Source = ImageSource.FromFile(backdrop);
+        TableImage.Source = ImageSource.FromFile(table);
 
-        // Only ever seen in the sliver the felt art can't reach on an
-        // extreme window aspect ratio, so it's matched to each table's own
-        // darkest edge rather than being a colour in its own right.
+        // The table art is opaque and fills the window, so this is only ever
+        // seen in the moment before the image is decoded. Still matched to the
+        // table's own darkest edge, so that moment is not a flash of white.
         BackgroundColor = Color.FromArgb(pageBackground);
 
         // The shoe/discard piles show the same face-down back the dealer's
@@ -3628,6 +3630,9 @@ public partial class MainPage : ContentPage
     /// </summary>
     private sealed class TableRulesDrawable : IDrawable
     {
+        /// <summary>Built once rather than per Draw - the family never changes, and Draw runs on the UI thread every time the felt is repainted.</summary>
+        private static readonly Microsoft.Maui.Graphics.Font DisplayFont = new(AppFonts.DisplayFamily);
+
         /// <summary>How far the middle of a line dips below its two ends.</summary>
         private const float ArcSagitta = 18f;
 
@@ -3660,7 +3665,7 @@ public partial class MainPage : ContentPage
             // alias here would quietly fall back to the system face; see
             // AppFonts.DisplayFamily. A name the platform still can't resolve
             // falls back rather than failing, so this needs no guard.
-            canvas.Font = new Microsoft.Maui.Graphics.Font(AppFonts.DisplayFamily);
+            canvas.Font = DisplayFont;
 
             // Laid out upwards from the bottom of the band: the printing
             // belongs just above the seats, leaving the space higher up clear
