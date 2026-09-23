@@ -818,23 +818,30 @@ public partial class MainPage : ContentPage
         }
     }
 
-#if DEBUG
-    /// <summary>Debug builds only: how many times the page has been given a size, so a runaway layout is visible in a device log rather than only as a frozen screen.</summary>
-    private int _sizeAllocationCount;
-#endif
+    /// <summary>
+    /// One line into the device log, prefixed so it can be picked out of the
+    /// noise a simulator produces: filter a log on "[table]" and what is left
+    /// is this table talking.
+    ///
+    /// [Conditional] removes the CALL SITES from a Release build rather than
+    /// just the body, so this costs Release nothing and needs no #if at the
+    /// places it is called from. It exists because this page's one real
+    /// failure mode - layout that will not settle - looks identical from the
+    /// outside to a dozen other things, and guessing between them from a
+    /// screenshot cost several rounds of builds.
+    /// </summary>
+    [System.Diagnostics.Conditional("DEBUG")]
+    private static void Trace(string message) =>
+        System.Diagnostics.Debug.WriteLine($"[table] {message}");
 
     protected override void OnSizeAllocated(double width, double height)
     {
         base.OnSizeAllocated(width, height);
 
-#if DEBUG
-        // A handful of these at startup and a couple per rotation is normal.
-        // A stream of them, especially with the numbers drifting by a point or
-        // two, is a layout loop - which is what dealing used to provoke.
-        _sizeAllocationCount++;
-        System.Diagnostics.Debug.WriteLine(
-            $"[table] OnSizeAllocated #{_sizeAllocationCount} {width:F1}x{height:F1}");
-#endif
+        // A handful at startup and a couple per rotation is normal. A stream of
+        // these, especially with the numbers drifting by a point or two, is a
+        // layout loop - which is what dealing used to provoke.
+        Trace($"OnSizeAllocated {width:F1}x{height:F1}");
 
         // Deliberately not done inline. On iOS this runs inside the page's own
         // layout pass, and both calls mutate the visual tree -
@@ -1749,6 +1756,8 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        Trace($"deal requested: {_hands.Count} hand(s), {_variant.Name}");
+
         if (_hands.Any(h => h.Bet <= 0))
         {
             ResultLabel.Text = "Place a bet on every hand before dealing.";
@@ -1857,6 +1866,7 @@ public partial class MainPage : ContentPage
         }
 
         PersistInProgressRound();
+        Trace("deal finished, waiting on the player");
     }
 
     /// <summary>How many cards left in the shoe triggers a reshuffle-before-next-round, scaled by how many hands are being dealt.</summary>
@@ -2159,6 +2169,7 @@ public partial class MainPage : ContentPage
         // own play - is entitled to assume the table has settled, so the deal
         // is not finished until the last card has actually landed.
         await Task.WhenAll(cardsInFlight);
+        Trace($"opening deal done, {cardsInFlight.Count} cards");
 
         UpdateDealerValueLabel(hideDealerHoleCard);
     }
@@ -2175,6 +2186,7 @@ public partial class MainPage : ContentPage
         var image = CreateCardImage(imageFile, height);
         targetLayout.Children.Add(image);
         FanCardRow(targetLayout, height);
+        Trace($"card {imageFile} added, row holds {targetLayout.Children.Count}");
         await AnimateCardFromShoe(image);
     }
 
