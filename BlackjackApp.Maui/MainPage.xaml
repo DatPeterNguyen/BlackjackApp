@@ -80,11 +80,14 @@
                 than the shoe, so the dealer lands left of centre and out of
                 line with the seats below. Flipping to "*,Auto,*" centres it
                 but breaks something worse - an Auto column measures its
-                content unconstrained, and DealerCardsLayout wraps, so it
-                collapses to one card per line. That makes this row one card
-                wide and several cards tall, which starves the edge columns
-                and shoves the rail and the bottom bar off screen.
-                HandSlotCardsWidth is pinned for the same underlying reason.
+                content unconstrained, and back when the dealer's cards were a
+                wrapping FlexLayout that collapsed the row to one card per line,
+                making it one card wide and several tall, which starved the edge
+                columns and shoved the rail and the bottom bar off screen. The
+                card rows are pinned stacks now rather than wrapping layouts -
+                that unconstrained measurement is exactly what froze the table
+                on a deal - but this row stays one cell regardless, because
+                that is also what puts the dealer on the true centre line.
 
                 So: one cell, three overlapping children. The dealer's stack
                 fills the whole width and centres its own contents, which
@@ -111,8 +114,16 @@
                 <VerticalStackLayout x:Name="DealerStack" Grid.Row="0" Grid.RowSpan="2" Spacing="4"
                                      VerticalOptions="Start" HorizontalOptions="Fill" InputTransparent="True">
                     <Label x:Name="DealerHeadingLabel" Text="DEALER" Style="{StaticResource FeltHeading}" FontSize="17" HorizontalOptions="Center"/>
-                    <FlexLayout x:Name="DealerCardsLayout" Direction="Row" Wrap="Wrap"
-                                JustifyContent="Center" AlignItems="Center" HorizontalOptions="Fill"/>
+                    <!--
+                        A stack, not a wrapping FlexLayout, and its height is
+                        pinned from code (SizeDealerCardRow). A row whose height
+                        grows when a card lands re-measures everything above it,
+                        and on iOS that did not settle - which is what froze the
+                        table on a deal. Long hands overlap instead of wrapping
+                        onto a second line; see FanCardRow.
+                    -->
+                    <HorizontalStackLayout x:Name="DealerCardsLayout" Spacing="0"
+                                           HorizontalOptions="Center"/>
                     <Label x:Name="DealerValueLabel" Text="" Style="{StaticResource FeltHeading}"
                            FontSize="18" HorizontalOptions="Center"/>
                 </VerticalStackLayout>

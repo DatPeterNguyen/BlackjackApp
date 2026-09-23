@@ -267,6 +267,9 @@ public partial class MainPage : ContentPage
     /// </summary>
     private const double CardAspectRatio = 234.0 / 328.0;
 
+    /// <summary>Slack above and below a card inside its row, matching the 2pt margin CreateCardImage gives each card.</summary>
+    private const double CardRowPadding = 4;
+
     /// <summary>
     /// How long past an animation's own duration to wait before giving up on
     /// it and carrying on.
@@ -563,7 +566,7 @@ public partial class MainPage : ContentPage
 
         /// <summary>War Blackjack only: the small drop target below Border for this hand's own War side bet (see CreateHandSlotView) - hidden entirely for the other variants (see UpdateWarUiVisibility).</summary>
         public required Border WarBorder { get; init; }
-        public required FlexLayout CardsLayout { get; init; }
+        public required HorizontalStackLayout CardsLayout { get; init; }
         public required Image ChipImage { get; init; }
         public required Label BetLabel { get; init; }
         public required Label WarBetLabel { get; init; }
@@ -602,7 +605,19 @@ public partial class MainPage : ContentPage
         ApplyHandSlotArc();
         RefreshHandSlotHighlights();
         UpdateWarUiVisibility();
+        SizeDealerCardRow();
     }
+
+    /// <summary>
+    /// Pins the dealer's card row to the current metrics, for the same reason
+    /// each seat's row is pinned in CreateHandSlotView: a row whose height can
+    /// change when a card lands re-measures everything above it, and on iOS
+    /// that did not settle. The seats get theirs at construction; the dealer's
+    /// row comes from XAML, so it is set here instead, on every path that
+    /// builds or rebuilds the table's card surfaces.
+    /// </summary>
+    private void SizeDealerCardRow() =>
+        DealerCardsLayout.HeightRequest = DealerCardHeight + CardRowPadding;
 
     /// <summary>
     /// Moves the pieces that cannot simply shrink to fit a narrow screen.
@@ -759,6 +774,7 @@ public partial class MainPage : ContentPage
 
         RefreshHandSlotHighlights();
         UpdateWarUiVisibility();
+        SizeDealerCardRow();
     }
 
     /// <summary>
@@ -802,9 +818,23 @@ public partial class MainPage : ContentPage
         }
     }
 
+#if DEBUG
+    /// <summary>Debug builds only: how many times the page has been given a size, so a runaway layout is visible in a device log rather than only as a frozen screen.</summary>
+    private int _sizeAllocationCount;
+#endif
+
     protected override void OnSizeAllocated(double width, double height)
     {
         base.OnSizeAllocated(width, height);
+
+#if DEBUG
+        // A handful of these at startup and a couple per rotation is normal.
+        // A stream of them, especially with the numbers drifting by a point or
+        // two, is a layout loop - which is what dealing used to provoke.
+        _sizeAllocationCount++;
+        System.Diagnostics.Debug.WriteLine(
+            $"[table] OnSizeAllocated #{_sizeAllocationCount} {width:F1}x{height:F1}");
+#endif
 
         // Deliberately not done inline. On iOS this runs inside the page's own
         // layout pass, and both calls mutate the visual tree -
@@ -888,14 +918,30 @@ public partial class MainPage : ContentPage
     /// </summary>
     private (VerticalStackLayout Container, HandSlotView View) CreateHandSlotView(int handIndex)
     {
-        var cardsLayout = new FlexLayout
+        // A fixed-height row that does not wrap, and that is the whole point.
+        //
+        // This was a wrapping FlexLayout with its width pinned and its height
+        // left to measurement. Adding a card changed that height, which
+        // propagated out through the seat into PlayerHandsLayout - itself a
+        // wrapping FlexLayout, sitting in an Auto Grid row, so measured with an
+        // unbounded height - and on iOS that re-measurement did not settle.
+        // Dealing is the one moment this page adds children in bulk, which is
+        // why dealing was the one thing that locked the table up.
+        //
+        // Pinning the height means a card landing cannot change any size
+        // outside the seat: the row's height is fixed here, the seat's width is
+        // fixed by its Border, so nothing measures upwards. That also makes
+        // this the third FlexLayout in this file to have caused a measurement
+        // fault - hence the rule the file now follows, which is to reach for a
+        // stack layout unless wrapping is genuinely needed.
+        //
+        // A row that cannot grow downwards has to take extra cards sideways
+        // instead, which is what FanCardRow does.
+        var cardsLayout = new HorizontalStackLayout
         {
-            Direction = FlexDirection.Row,
-            Wrap = FlexWrap.Wrap,
-            JustifyContent = FlexJustify.Center,
-            AlignItems = FlexAlignItems.Center,
-            HorizontalOptions = LayoutOptions.Fill,
-            WidthRequest = HandSlotCardsWidth, // pinned explicitly - a Fill request alone wasn't reliably resolving to a real width inside the stack
+            Spacing = 0,
+            HorizontalOptions = LayoutOptions.Center,
+            HeightRequest = HandSlotCardHeight + CardRowPadding,
         };
         // A single chip image (whichever denomination the bet amount maps
         // to) plus a plain "Bet: $X" label - built/rebuilt by
@@ -2128,6 +2174,7 @@ public partial class MainPage : ContentPage
     {
         var image = CreateCardImage(imageFile, height);
         targetLayout.Children.Add(image);
+        FanCardRow(targetLayout, height);
         await AnimateCardFromShoe(image);
     }
 
@@ -3211,6 +3258,7 @@ public partial class MainPage : ContentPage
             DealerCardsLayout.Children.Add(CreateCardImage(imageFile, DealerCardHeight));
         }
 
+        FanCardRow(DealerCardsLayout, DealerCardHeight);
         UpdateDealerValueLabel(hideHoleCard: true);
 
         if (dealerCardsBeforePlay > 1)
@@ -3361,6 +3409,7 @@ public partial class MainPage : ContentPage
             DealerCardsLayout.Children.Add(CreateCardImage(imageFile, DealerCardHeight));
         }
 
+        FanCardRow(DealerCardsLayout, DealerCardHeight);
         UpdateDealerValueLabel(hideHoleCard);
     }
 
@@ -3398,6 +3447,8 @@ public partial class MainPage : ContentPage
         {
             view.CardsLayout.Children.Add(CreateCardImage(CardImageFile(card), HandSlotCardHeight));
         }
+
+        FanCardRow(view.CardsLayout, HandSlotCardHeight);
 
         view.ValueLabel.Text = slot.Hand.Cards.Count > 0 ? $"Value: {slot.Hand.GetBestValue().Value}" : "";
         view.ResultLabel.Text = slot.ResultText;
@@ -3503,6 +3554,34 @@ public partial class MainPage : ContentPage
         Aspect = Aspect.AspectFit,
         Margin = new Thickness(2),
     };
+
+    /// <summary>
+    /// Overlaps a row of cards once there are more than a few, the way a real
+    /// hand is fanned.
+    ///
+    /// The rows are fixed-height stacks that cannot wrap (see
+    /// CreateHandSlotView for why that matters), so a hand that has been hit
+    /// several times has to be absorbed sideways rather than onto a second
+    /// line. The overlap is a flat fraction of a card rather than anything
+    /// measured, deliberately: measuring a row in order to decide how to lay
+    /// that row out is how the wrapping version got into trouble.
+    /// </summary>
+    private static void FanCardRow(Layout row, double cardHeight)
+    {
+        const int cardsThatFitUnfanned = 3;
+
+        var overlap = row.Children.Count <= cardsThatFitUnfanned
+            ? 0
+            : Math.Round(cardHeight * CardAspectRatio * 0.4);
+
+        for (var i = 0; i < row.Children.Count; i++)
+        {
+            if (row.Children[i] is View card)
+            {
+                card.Margin = new Thickness(i == 0 ? 2 : 2 - overlap, 2, 2, 2);
+            }
+        }
+    }
 
     private static string CardImageFile(Card card) => $"card_{RankCode(card.Rank)}{SuitCode(card.Suit)}.png";
 
