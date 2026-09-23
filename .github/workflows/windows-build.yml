@@ -1,0 +1,141 @@
+# Builds the downloadable Windows version.
+#
+# The output is self-contained on purpose: it carries its own .NET runtime and
+# its own Windows App SDK, so someone downloading it needs nothing installed
+# first. That is what makes it a thing you can hand to a person rather than a
+# thing that works on a developer's machine. It costs a few hundred megabytes.
+#
+# Two artifacts come out of every run:
+#   BlackjackSetup.exe        - the installer, which is what to give people
+#   Blackjack-windows-x64.zip - the same files loose, for anyone who would
+#                               rather not run an installer
+#
+# The zip is produced and uploaded BEFORE the installer is built, so a problem
+# with Inno Setup still leaves a usable download rather than an empty run.
+#
+# Publish a GitHub Release and this attaches both files to it, which gives a
+# permanent download link that is not behind a login - artifacts from a normal
+# run are only downloadable by people signed in to GitHub.
+name: Windows Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'BlackjackApp.Maui/**'
+      - 'BlackjackApp.core/**'
+      - 'Installer/**'
+      - '.github/workflows/windows-build.yml'
+  release:
+    types: [ published ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: windows-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            windows-nuget-
+
+      - name: Restore MAUI workloads
+        # Restores every workload the project's TargetFrameworks ask for, which
+        # on a Windows runner means the Android and iOS ones too. Slower than
+        # installing maui-windows alone, but NuGet restore is project-wide
+        # rather than per-framework, so the other frameworks have to resolve
+        # even though only Windows is being published here.
+        run: dotnet workload restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
+
+      - name: Run BlackjackApp.core unit tests
+        run: dotnet test BlackjackApp.Tests/BlackjackApp.Tests.csproj -c Release
+
+      - name: Publish self-contained, unpackaged
+        # WindowsPackageType=None means a plain .exe rather than an MSIX for the
+        # Store. WindowsAppSDKSelfContained means the Windows App SDK travels
+        # with the app instead of having to be installed. --self-contained does
+        # the same for the .NET runtime itself.
+        run: >
+          dotnet publish BlackjackApp.Maui/BlackjackApp.Maui.csproj
+          -f net10.0-windows10.0.19041.0
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:WindowsPackageType=None
+          -p:WindowsAppSDKSelfContained=true
+
+      - name: Find the publish folder
+        id: publish
+        shell: pwsh
+        run: |
+          $dir = "BlackjackApp.Maui/bin/Release/net10.0-windows10.0.19041.0/win-x64/publish"
+          if (-not (Test-Path "$dir/BlackjackApp.Maui.exe")) {
+            Write-Error "No BlackjackApp.Maui.exe under $dir - the publish step did not produce what this workflow expects."
+            exit 1
+          }
+          $full = (Resolve-Path $dir).Path
+          "dir=$full" >> $env:GITHUB_OUTPUT
+          $mb = [math]::Round(((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB), 1)
+          Write-Host "Publish folder is $mb MB"
+
+      - name: Zip it
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "${{ steps.publish.outputs.dir }}\*" -DestinationPath dist\Blackjack-windows-x64.zip
+
+      - name: Upload the zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blackjack-Windows-Zip
+          path: dist/Blackjack-windows-x64.zip
+          retention-days: 30
+
+      - name: Install Inno Setup
+        # Not on the runner image by default. continue-on-error because the zip
+        # above is already safe - a bad day for chocolatey should not cost the
+        # whole run.
+        continue-on-error: true
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the installer
+        id: installer
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DPublishDir=${{ steps.publish.outputs.dir }}" `
+            "/DOutputDir=$((Resolve-Path dist).Path)" `
+            Installer\BlackjackSetup.iss
+
+      - name: Upload the installer
+        if: steps.installer.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blackjack-Windows-Installer
+          path: dist/BlackjackSetup.exe
+          retention-days: 30
+
+      - name: Attach both to the release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = @("dist/Blackjack-windows-x64.zip")
+          if (Test-Path "dist/BlackjackSetup.exe") { $files += "dist/BlackjackSetup.exe" }
+          gh release upload "${{ github.event.release.tag_name }}" $files --clobber
