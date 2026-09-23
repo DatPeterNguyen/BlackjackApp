@@ -654,14 +654,20 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        if (_roundInProgress)
+        if (_actionInProgress)
         {
-            // Rebuilding the seats replaces every seat view, and the deal loop
-            // is holding a reference to the one it is dealing into - swapping
-            // it out underneath sends the rest of the round's cards into a
-            // layout that is no longer on screen, which looks to the player
-            // like the cards stopped coming. Hand count and deck count already
-            // wait for the round to end (see ApplyTableSettings); so does this.
+            // Rebuilding the seats replaces every seat view, and a deal or hit
+            // in progress is holding a reference to the one it is dealing into
+            // - swapping it out underneath sends the rest of that card's
+            // animation into a layout that is no longer on screen, which looks
+            // to the player like the cards stopped coming.
+            //
+            // Waiting on the card in flight rather than on the whole round is
+            // deliberate: someone who turns the phone over mid-hand should see
+            // the table follow within a moment, not sit in the wrong
+            // orientation until the hand is finished. Between actions the
+            // table is idle and nothing holds a seat reference, so a rebuild
+            // there is safe. RunGuardedAction applies whatever was deferred.
             _pendingMetricsHeight = height;
             return;
         }
@@ -1619,6 +1625,16 @@ public partial class MainPage : ContentPage
         finally
         {
             _actionInProgress = false;
+
+            // A rotation or resize that arrived while this action was
+            // animating deferred its rebuild rather than pulling the seats out
+            // from under it - see ApplyAdaptiveMetrics. Now is the moment.
+            if (_pendingMetricsHeight is { } deferredHeight)
+            {
+                _pendingMetricsHeight = null;
+                ApplyAdaptiveMetrics(deferredHeight);
+                SizeChipTray();
+            }
         }
     }
 
@@ -2882,15 +2898,6 @@ public partial class MainPage : ContentPage
             _pendingHandCount = null;
         }
 
-        // A rotation or resize that landed mid-round (see ApplyAdaptiveMetrics)
-        // deferred its rebuild to here, where there is no deal in flight to
-        // pull the seats out from under.
-        if (_pendingMetricsHeight is { } deferredHeight)
-        {
-            _pendingMetricsHeight = null;
-            ApplyAdaptiveMetrics(deferredHeight);
-        }
-
         await OfferChipRescueIfBustedOut();
     }
 
@@ -3161,17 +3168,28 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        await ScaleXTo(holeCardImage, 0, CardFlipHalfDurationMs, Easing.CubicIn);
+        // Bounded like the dealt cards are, and for the same reason - this one
+        // sits on the round-resolution path, so an await that never came back
+        // would leave the round half-settled with the hole card edge-on.
+        await RunAnimationAsync(
+            ScaleXTo(holeCardImage, 0, CardFlipHalfDurationMs, Easing.CubicIn),
+            CardFlipHalfDurationMs,
+            () => holeCardImage.ScaleX = 0);
+
         holeCardImage.Source = ImageSource.FromFile(CardImageFile(_dealerHand.Cards[1]));
-        await ScaleXTo(holeCardImage, 1, CardFlipHalfDurationMs, Easing.CubicOut);
+
+        await RunAnimationAsync(
+            ScaleXTo(holeCardImage, 1, CardFlipHalfDurationMs, Easing.CubicOut),
+            CardFlipHalfDurationMs,
+            () => holeCardImage.ScaleX = 1);
     }
 
     /// <summary>
-    /// Animates a view's ScaleX to the given value. MAUI's built-in
-    /// animation extensions (FadeToAsync/TranslateToAsync/RotateTo etc. -
-    /// see elsewhere in this file) don't include a ScaleX-only variant, so
-    /// this drives the ScaleX property directly through the same
-    /// VisualElement.Animate primitive those extensions are built on.
+    /// Animates a view's ScaleX to the given value. MAUI's built-in animation
+    /// extensions don't include a ScaleX-only variant, so this drives the
+    /// property directly through the VisualElement.Animate primitive those
+    /// extensions are built on - the same approach AnimateTranslation takes,
+    /// which is there for a different reason worth reading.
     /// </summary>
     private static Task ScaleXTo(VisualElement view, double toValue, uint length, Easing easing)
     {
