@@ -47,6 +47,16 @@ public partial class MainPage : ContentPage
     private int? _pendingDeckCount;
     private int? _pendingHandCount;
 
+    /// <summary>A screen height whose metrics change arrived mid-round and is waiting for EndRound to apply it - see ApplyAdaptiveMetrics.</summary>
+    private double? _pendingMetricsHeight;
+
+    /// <summary>
+    /// True while a table action (deal, hit, stand, double, split) is partway
+    /// through its animations. The action handlers are async void, so nothing
+    /// else serialises them - see the guard at the top of each.
+    /// </summary>
+    private bool _actionInProgress;
+
     private Deck? _deck;
     private Hand _dealerHand = new();
 
@@ -234,8 +244,43 @@ public partial class MainPage : ContentPage
     /// <summary>Pause after each card lands before the next one is dealt, so a deal reads as one card at a time instead of everything landing at once.</summary>
     private const int CardDealStaggerMs = 90;
 
-    /// <summary>Cap on how many layout-yield attempts AnimateCardFromShoe will wait through for a just-added card's Bounds to become non-empty before giving up and animating with whatever it has - a single Task.Yield isn't reliably enough for a native measure/arrange pass to finish, especially inside nested layouts, so this polls a few frames instead of guessing wrong on some fraction of dealt cards.</summary>
-    private const int MaxLayoutWaitAttempts = 10;
+    /// <summary>
+    /// Cap on how many layout-yield attempts AnimateCardFromShoe will wait
+    /// through for a just-added card's Bounds to become non-empty before
+    /// giving up and animating with whatever it has.
+    ///
+    /// This used to be 10, from back when a card image had no explicit
+    /// width: iOS loads a bitmap asynchronously, so until the file was
+    /// decoded the card measured zero wide and Bounds stayed empty no
+    /// matter how long this waited - it burned all ten yields on every
+    /// single dealt card and then measured the wrong position anyway.
+    /// CreateCardImage now pins both dimensions, so the card has its real
+    /// box from the moment it is added and one or two yields is all a
+    /// layout pass needs.
+    /// </summary>
+    private const int MaxLayoutWaitAttempts = 2;
+
+    /// <summary>
+    /// The kit's card art is 234x328 and every card in it is exactly that,
+    /// so a card's width is a pure function of its height. Pinning it
+    /// matters for more than tidiness - see CreateCardImage.
+    /// </summary>
+    private const double CardAspectRatio = 234.0 / 328.0;
+
+    /// <summary>
+    /// How long past an animation's own duration to wait before giving up on
+    /// it and carrying on.
+    ///
+    /// A MAUI animation completes its task from the ticker's "finished"
+    /// callback, so if the ticker stops - the window's animation manager is
+    /// disposed because something replaced the page mid-deal, say - the
+    /// await never completes, never faults and never cancels. That would
+    /// strand the deal half-dealt with no way out, which is exactly what a
+    /// player would report as the game freezing. Every animated await in
+    /// the deal path goes through RunAnimationAsync so the worst case is a
+    /// card that skips its animation rather than a round that never ends.
+    /// </summary>
+    private const int AnimationSafetyMarginMs = 600;
 
     /// <summary>Half the duration of the dealer's hole-card flip (see FlipDealerHoleCardFaceUp) - the card narrows to a sliver over this long, then widens back out over the same time again with the new face showing.</summary>
     private const uint CardFlipHalfDurationMs = 130;
@@ -251,6 +296,9 @@ public partial class MainPage : ContentPage
 
     /// <summary>How long a hand's chip image takes to fade in when a bet is placed on it.</summary>
     private const uint ChipPlacedAnimationDurationMs = 180;
+
+    /// <summary>How long the drag ghost takes to glide back to the tray when a chip drag misses every hand slot.</summary>
+    private const uint DragGhostReturnDurationMs = 180;
 
     /// <summary>War Blackjack only: how long to hold on a hand's War result (won/lost) before dealing the second cards and moving into real blackjack play - see AdvanceWarDecisionQueue/_anyHandWonWarThisRound. Gives a winning Press/Cash-Out tap's result text a beat to actually be read instead of the next cards immediately flying in on top of it.</summary>
     private static readonly TimeSpan WarResultPauseBeforeSecondCards = TimeSpan.FromSeconds(2);
@@ -587,11 +635,34 @@ public partial class MainPage : ContentPage
         // Portrait is decided by shape, not size. Compact is only ever about a
         // landscape table being short - a phone held upright has height to
         // spare, so it never wants the cramped arrangement.
-        var shouldBePortrait = height > Width && Width > 0;
-        var shouldBeCompact = !shouldBePortrait && height < CompactHeightThreshold;
+        //
+        // Both tests carry a dead band around their switching point, and the
+        // band is what matters here rather than the exact numbers. Without
+        // one, a height that drifts a point or two across the line - which is
+        // what a safe-area inset resolving late, an iPad being resized in
+        // Split View, or the status bar growing during a call all do - flips
+        // the mode back and forth and tears down every seat on each pass.
+        var shouldBePortrait = Width <= 0
+            ? _portrait
+            : _portrait ? height > Width * 0.95 : height > Width * 1.05;
+
+        var shouldBeCompact = !shouldBePortrait
+            && (_compact ? height < CompactHeightThreshold + 15 : height < CompactHeightThreshold - 15);
 
         if (shouldBePortrait == _portrait && shouldBeCompact == _compact)
         {
+            return;
+        }
+
+        if (_roundInProgress)
+        {
+            // Rebuilding the seats replaces every seat view, and the deal loop
+            // is holding a reference to the one it is dealing into - swapping
+            // it out underneath sends the rest of the round's cards into a
+            // layout that is no longer on screen, which looks to the player
+            // like the cards stopped coming. Hand count and deck count already
+            // wait for the round to end (see ApplyTableSettings); so does this.
+            _pendingMetricsHeight = height;
             return;
         }
 
@@ -694,8 +765,19 @@ public partial class MainPage : ContentPage
     {
         base.OnSizeAllocated(width, height);
 
-        ApplyAdaptiveMetrics(height);
-        SizeChipTray();
+        // Deliberately not done inline. On iOS this runs inside the page's own
+        // layout pass, and both calls mutate the visual tree -
+        // ApplyAdaptiveMetrics clears and rebuilds every seat, SizeChipTray
+        // resizes every chip. Changing the tree from inside a layout pass
+        // dirties layout again before that pass has finished, and UIKit
+        // answers by running another pass synchronously rather than batching
+        // it, so a single resize could cascade. Handing the work to the
+        // dispatcher lets the current pass finish first.
+        Dispatcher.Dispatch(() =>
+        {
+            ApplyAdaptiveMetrics(height);
+            SizeChipTray();
+        });
     }
 
     /// <summary>
@@ -1236,7 +1318,16 @@ public partial class MainPage : ContentPage
     /// <summary>No hand slot was under the release point - glides the ghost smoothly back to where the chip started, then clears it, so a drag that misses reads as "put back down" rather than just vanishing.</summary>
     private async Task ReturnDragGhostHomeAsync()
     {
-        await DragGhostImage.TranslateToAsync(_dragGhostOrigin.X, _dragGhostOrigin.Y, 180, Easing.CubicOut);
+        // Same driver as the dealt cards, for the same reason - see AnimateTranslation.
+        await RunAnimationAsync(
+            AnimateTranslation(DragGhostImage, _dragGhostOrigin.X, _dragGhostOrigin.Y, DragGhostReturnDurationMs, Easing.CubicOut),
+            DragGhostReturnDurationMs,
+            () =>
+            {
+                DragGhostImage.TranslationX = _dragGhostOrigin.X;
+                DragGhostImage.TranslationY = _dragGhostOrigin.Y;
+            });
+
         await HideDragGhostAsync();
     }
 
@@ -1445,6 +1536,17 @@ public partial class MainPage : ContentPage
 
     private async void MenuButton_OnClicked(object? sender, EventArgs e)
     {
+        // Not while cards are in the air. The menu's Exit to Menu replaces the
+        // window's page, which takes the window's animation manager with it,
+        // and a MAUI animation reports completion through that manager - so
+        // every await still waiting on a card would wait forever and the round
+        // would never finish. The menu stays reachable the rest of the time,
+        // including mid-round while the table waits on the player.
+        if (_actionInProgress)
+        {
+            return;
+        }
+
         var menuPage = new GameMenuPage(_variant, _deckCount, _handCount);
         menuPage.SettingsSaved += OnSettingsSaved;
         await Navigation.PushModalAsync(menuPage);
@@ -1487,7 +1589,43 @@ public partial class MainPage : ContentPage
         UpdateTableColors();
     }
 
-    private async void DealButton_OnClicked(object? sender, EventArgs e)
+    /// <summary>
+    /// Runs one table action with the _actionInProgress guard held, so a
+    /// second tap arriving while the first is still awaiting its animations
+    /// is ignored instead of re-entering it.
+    ///
+    /// Every one of these handlers is async void, which means nothing
+    /// serialises them for us: the runtime returns to the UI at the first
+    /// await and the next tap starts the whole handler again from the top.
+    /// The guards inside the handlers do not catch it either, because the
+    /// state they test (_roundInProgress, _activeHandIndex,
+    /// _pendingWarDecisionHandIndex) is still perfectly valid mid-animation.
+    /// A second Stand during the dealer's reveal therefore used to run a
+    /// second EndRound and pay every hand out twice.
+    /// </summary>
+    private async Task RunGuardedAction(Func<Task> action)
+    {
+        if (_actionInProgress)
+        {
+            return;
+        }
+
+        _actionInProgress = true;
+
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            _actionInProgress = false;
+        }
+    }
+
+    private async void DealButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(DealAsync);
+
+    private async Task DealAsync()
     {
         if (_roundInProgress)
         {
@@ -1682,9 +1820,11 @@ public partial class MainPage : ContentPage
         PersistInProgressRound();
     }
 
-    private async void InsuranceButton_OnClicked(object? sender, EventArgs e) => await ResolveInsuranceDecision(tookInsurance: true);
+    private async void InsuranceButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(() => ResolveInsuranceDecision(tookInsurance: true));
 
-    private async void DeclineInsuranceButton_OnClicked(object? sender, EventArgs e) => await ResolveInsuranceDecision(tookInsurance: false);
+    private async void DeclineInsuranceButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(() => ResolveInsuranceDecision(tookInsurance: false));
 
     /// <summary>
     /// Settles the player's Insure/No Insurance choice. If they took it,
@@ -1847,6 +1987,18 @@ public partial class MainPage : ContentPage
             _hands.Count > 0 ? _hands.Max(h => h.Hand.Cards.Count) : 0,
             _dealerHand.Cards.Count);
 
+        // Each card's flight is started here and awaited at the bottom, not
+        // in the loop. The cards are still ADDED strictly one at a time in
+        // dealing order - that part is synchronous, at the top of
+        // DealAnimatedCard - so the deal still goes round the table the way a
+        // real dealer works it. What changes is that a card no longer has to
+        // land before the next one is pitched, which is also what a real deal
+        // looks like: there are two or three cards in the air at once.
+        // Waiting for each one cost 310ms per card, so a five-hand round took
+        // the better part of four seconds, with the action rail empty for all
+        // of it. That is the bulk of what reads as the game hanging on a deal.
+        var cardsInFlight = new List<Task>();
+
         for (var round = 0; round < maxRounds; round++)
         {
             for (var i = _hands.Count - 1; i >= 0; i--)
@@ -1859,7 +2011,7 @@ public partial class MainPage : ContentPage
                 }
 
                 var view = _handSlotViews[i];
-                await DealAnimatedCard(view.CardsLayout, CardImageFile(slot.Hand.Cards[round]), HandSlotCardHeight);
+                cardsInFlight.Add(DealAnimatedCard(view.CardsLayout, CardImageFile(slot.Hand.Cards[round]), HandSlotCardHeight));
 
                 // As soon as THIS hand's own cards are all down, show its
                 // value - and, if it was already cashed out as an immediate
@@ -1881,10 +2033,15 @@ public partial class MainPage : ContentPage
             {
                 var showFaceDown = hideDealerHoleCard && round == 1;
                 var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[round]);
-                await DealAnimatedCard(DealerCardsLayout, imageFile, DealerCardHeight);
+                cardsInFlight.Add(DealAnimatedCard(DealerCardsLayout, imageFile, DealerCardHeight));
                 await Task.Delay(CardDealStaggerMs);
             }
         }
+
+        // Everything downstream - insurance prompts, turn order, the dealer's
+        // own play - is entitled to assume the table has settled, so the deal
+        // is not finished until the last card has actually landed.
+        await Task.WhenAll(cardsInFlight);
 
         UpdateDealerValueLabel(hideDealerHoleCard);
     }
@@ -1913,12 +2070,12 @@ public partial class MainPage : ContentPage
     {
         cardImage.Opacity = 0;
 
-        // Let MAUI finish a layout pass so the card actually has real
-        // Bounds to read before measuring positions off of it. A single
-        // yield isn't reliably enough for a native measure/arrange pass
-        // to complete, so poll a few frames (bounded, so a card that
-        // genuinely never gets laid out still animates instead of
-        // hanging) until Bounds actually has real content.
+        // Let MAUI finish a layout pass so the card actually has real Bounds
+        // to read before measuring positions off of it. The card's box is
+        // pinned in both dimensions (see CreateCardImage), so one pass is
+        // enough and this settles on the first or second yield - it is
+        // bounded anyway, so a card that somehow never gets laid out still
+        // animates rather than waiting here.
         for (var attempt = 0; attempt < MaxLayoutWaitAttempts && cardImage.Bounds.IsEmpty; attempt++)
         {
             await Task.Yield();
@@ -1930,9 +2087,73 @@ public partial class MainPage : ContentPage
         cardImage.TranslationX = shoePosition.X - cardPosition.X;
         cardImage.TranslationY = shoePosition.Y - cardPosition.Y;
 
-        await Task.WhenAll(
-            cardImage.TranslateToAsync(0, 0, CardDealAnimationDurationMs, Easing.CubicOut),
-            cardImage.FadeToAsync(1, CardDealAnimationDurationMs));
+        await RunAnimationAsync(
+            Task.WhenAll(
+                AnimateTranslation(cardImage, 0, 0, CardDealAnimationDurationMs, Easing.CubicOut),
+                cardImage.FadeToAsync(1, CardDealAnimationDurationMs)),
+            CardDealAnimationDurationMs,
+            () =>
+            {
+                cardImage.TranslationX = 0;
+                cardImage.TranslationY = 0;
+                cardImage.Opacity = 1;
+            });
+    }
+
+    /// <summary>
+    /// Animates a view's TranslationX/Y, driving both properties through the
+    /// same VisualElement.Animate primitive ScaleXTo uses.
+    ///
+    /// This deliberately does NOT use MAUI's own TranslateToAsync. On iOS in
+    /// .NET 10 that extension raises a spurious SizeChanged after the
+    /// animation completes and the view's measured size drifts by a couple of
+    /// points each time, which restarts layout indefinitely and hangs the UI
+    /// (dotnet/maui#33934, and #32586 before it - the reported root cause is
+    /// the iOS SafeArea code invalidating parent layouts, and this page opts
+    /// into the new .NET 10 SafeAreaEdges API). Every dealt card ran that
+    /// extension, which is why the table froze on a deal and nowhere else,
+    /// and only on iOS. Driving the properties directly keeps the same
+    /// motion without going through that path.
+    /// </summary>
+    private static Task AnimateTranslation(VisualElement view, double toX, double toY, uint length, Easing easing)
+    {
+        var fromX = view.TranslationX;
+        var fromY = view.TranslationY;
+        var tcs = new TaskCompletionSource<bool>();
+
+        view.Animate(
+            "TableTranslate",
+            progress =>
+            {
+                view.TranslationX = fromX + ((toX - fromX) * progress);
+                view.TranslationY = fromY + ((toY - fromY) * progress);
+            },
+            0,
+            1,
+            length: length,
+            easing: easing,
+            finished: (_, cancelled) => tcs.TrySetResult(!cancelled));
+
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Awaits an animation, but never for longer than it should take.
+    ///
+    /// See AnimationSafetyMarginMs for why: an animation whose ticker has
+    /// gone away completes its task never rather than late. When the timeout
+    /// wins, settleImmediately puts the view in the state the animation
+    /// would have left it in, so the table still looks right and the round
+    /// carries on.
+    /// </summary>
+    private static async Task RunAnimationAsync(Task animation, uint durationMs, Action settleImmediately)
+    {
+        var finished = await Task.WhenAny(animation, Task.Delay((int)durationMs + AnimationSafetyMarginMs));
+
+        if (finished != animation)
+        {
+            settleImmediately();
+        }
     }
 
     /// <summary>
@@ -2081,7 +2302,10 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>Folds this hand's War stake plus its 1:1 winnings straight into its blackjack bet, putting it at risk for the rest of the round instead of banking it.</summary>
-    private async void PressWarButton_OnClicked(object? sender, EventArgs e)
+    private async void PressWarButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(PressWarAsync);
+
+    private async Task PressWarAsync()
     {
         if (_pendingWarDecisionHandIndex < 0)
         {
@@ -2111,7 +2335,10 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>Banks this hand's War stake plus its 1:1 winnings straight into the balance, leaving the blackjack bet untouched.</summary>
-    private async void CashOutWarButton_OnClicked(object? sender, EventArgs e)
+    private async void CashOutWarButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(CashOutWarAsync);
+
+    private async Task CashOutWarAsync()
     {
         if (_pendingWarDecisionHandIndex < 0)
         {
@@ -2185,23 +2412,31 @@ public partial class MainPage : ContentPage
     /// </summary>
     private async Task RevealSecondCards()
     {
+        // Overlapped for the same reason as the opening deal - see the note
+        // on cardsInFlight in RevealOpeningDeal.
+        var cardsInFlight = new List<Task>();
+
         for (var i = _hands.Count - 1; i >= 0; i--)
         {
             var slot = _hands[i];
             var view = _handSlotViews[i];
             var newCard = slot.Hand.Cards[^1];
 
-            await DealAnimatedCard(view.CardsLayout, CardImageFile(newCard), HandSlotCardHeight);
+            cardsInFlight.Add(DealAnimatedCard(view.CardsLayout, CardImageFile(newCard), HandSlotCardHeight));
             view.ValueLabel.Text = $"Value: {slot.Hand.GetBestValue().Value}";
             view.ResultLabel.Text = slot.ResultText;
             await Task.Delay(CardDealStaggerMs);
         }
 
-        await DealAnimatedCard(DealerCardsLayout, CardBackFile, DealerCardHeight); // the dealer's second card stays hidden as the hole card
+        cardsInFlight.Add(DealAnimatedCard(DealerCardsLayout, CardBackFile, DealerCardHeight)); // the dealer's second card stays hidden as the hole card
+        await Task.WhenAll(cardsInFlight);
         UpdateDealerValueLabel(hideHoleCard: true);
     }
 
-    private async void HitButton_OnClicked(object? sender, EventArgs e)
+    private async void HitButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(HitAsync);
+
+    private async Task HitAsync()
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -2228,7 +2463,10 @@ public partial class MainPage : ContentPage
         PersistInProgressRound();
     }
 
-    private async void StandButton_OnClicked(object? sender, EventArgs e)
+    private async void StandButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(StandAsync);
+
+    private async Task StandAsync()
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -2240,7 +2478,10 @@ public partial class MainPage : ContentPage
         PersistInProgressRound();
     }
 
-    private async void DoubleButton_OnClicked(object? sender, EventArgs e)
+    private async void DoubleButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(DoubleAsync);
+
+    private async Task DoubleAsync()
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -2317,7 +2558,10 @@ public partial class MainPage : ContentPage
     /// rule: each Ace hand gets exactly one more card and is locked
     /// immediately, with no further hitting or doubling.
     /// </summary>
-    private async void SplitButton_OnClicked(object? sender, EventArgs e)
+    private async void SplitButton_OnClicked(object? sender, EventArgs e) =>
+        await RunGuardedAction(SplitAsync);
+
+    private async Task SplitAsync()
     {
         if (!_roundInProgress || _deck is null || _activeHandIndex < 0)
         {
@@ -2638,6 +2882,15 @@ public partial class MainPage : ContentPage
             _pendingHandCount = null;
         }
 
+        // A rotation or resize that landed mid-round (see ApplyAdaptiveMetrics)
+        // deferred its rebuild to here, where there is no deal in flight to
+        // pull the seats out from under.
+        if (_pendingMetricsHeight is { } deferredHeight)
+        {
+            _pendingMetricsHeight = null;
+            ApplyAdaptiveMetrics(deferredHeight);
+        }
+
         await OfferChipRescueIfBustedOut();
     }
 
@@ -2742,12 +2995,13 @@ public partial class MainPage : ContentPage
     /// Animates every card currently on the table flying off to the
     /// discard pile, then actually moves them there in the model and clears
     /// the table's display - the real-world equivalent of a dealer
-    /// sweeping a finished hand into the discard tray. Cards to discard are
-    /// snapshotted up front so a new round starting mid-animation (a rare
-    /// race right at the 5-second mark) can never end up having THIS round
-    /// discard the new round's cards instead of its own; the same new-round
-    /// check also guards the final display clear, so it never erases cards
-    /// the new round has already dealt.
+    /// sweeping a finished hand into the discard tray. The model move happens
+    /// first and the animation second, so there is no window in which the
+    /// cards are marked discarded but are not actually in the tray - that
+    /// window used to let a Deal tap reshuffle a shoe still missing the
+    /// previous round. A new round starting mid-animation is caught by the
+    /// _roundGeneration check on the final display clear, so it never erases
+    /// cards the new round has already dealt.
     /// </summary>
     private async Task DiscardTableToDiscardPile()
     {
@@ -2759,20 +3013,26 @@ public partial class MainPage : ContentPage
         _roundCardsDiscarded = true;
         var generation = _roundGeneration;
 
-        var dealerCardsToDiscard = _dealerHand.Cards.ToList();
-        var handCardsToDiscard = _hands.Select(h => h.Hand.Cards.ToList()).ToList();
         var cardViews = CollectTableCardViews();
 
-        await AnimateCardsToDiscard(cardViews);
+        // The cards go into the discard tray in the model BEFORE the animation,
+        // not after it. The flight across the table is decoration; as far as
+        // the shoe is concerned they are gone the moment the round is over.
+        // With it the other way round there was a window of a few hundred
+        // milliseconds in which _roundCardsDiscarded was already true but the
+        // cards had not actually been discarded - so a Deal tap landing in it
+        // skipped its own fallback discard, then tested the cut card and
+        // reshuffled a shoe that was still missing the previous round.
+        _deck.Discard(_dealerHand.Cards.ToList());
 
-        _deck.Discard(dealerCardsToDiscard);
-
-        foreach (var cards in handCardsToDiscard)
+        foreach (var hand in _hands)
         {
-            _deck.Discard(cards);
+            _deck.Discard(hand.Hand.Cards.ToList());
         }
 
         UpdateShoeDisplay();
+
+        await AnimateCardsToDiscard(cardViews);
 
         if (generation == _roundGeneration)
         {
@@ -2837,9 +3097,17 @@ public partial class MainPage : ContentPage
         var targetX = discardPosition.X - cardPosition.X;
         var targetY = discardPosition.Y - cardPosition.Y;
 
-        await Task.WhenAll(
-            cardView.TranslateToAsync(targetX, targetY, CardDiscardAnimationDurationMs, Easing.CubicIn),
-            cardView.FadeToAsync(0, CardDiscardAnimationDurationMs));
+        await RunAnimationAsync(
+            Task.WhenAll(
+                AnimateTranslation(cardView, targetX, targetY, CardDiscardAnimationDurationMs, Easing.CubicIn),
+                cardView.FadeToAsync(0, CardDiscardAnimationDurationMs)),
+            CardDiscardAnimationDurationMs,
+            () =>
+            {
+                cardView.TranslationX = targetX;
+                cardView.TranslationY = targetY;
+                cardView.Opacity = 0;
+            });
     }
 
     /// <summary>
@@ -3122,10 +3390,22 @@ public partial class MainPage : ContentPage
         TableRulesView.Invalidate();
     }
 
+    /// <summary>
+    /// Both dimensions are pinned deliberately. Setting only the height
+    /// leaves the width to come from the bitmap, and iOS decodes a bitmap
+    /// asynchronously - so the card measures zero wide when it is added and
+    /// then changes size a moment later when the file arrives. That late
+    /// size change propagates up through the seat's wrapping FlexLayout
+    /// into an Auto Grid row and re-lays out the whole page, once per dealt
+    /// card, right in the middle of the card's own fly-in animation. Giving
+    /// the card its final box up front means there is no second size to
+    /// change to.
+    /// </summary>
     private static Image CreateCardImage(string imageFile, double height) => new()
     {
         Source = ImageSource.FromFile(imageFile),
         HeightRequest = height,
+        WidthRequest = Math.Round(height * CardAspectRatio),
         Aspect = Aspect.AspectFit,
         Margin = new Thickness(2),
     };
