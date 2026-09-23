@@ -300,6 +300,41 @@ public partial class MainPage : ContentPage
     /// <summary>How long the drag ghost takes to glide back to the tray when a chip drag misses every hand slot.</summary>
     private const uint DragGhostReturnDurationMs = 180;
 
+    /// <summary>
+    /// Whether things on this table may be moved about by animating their
+    /// position, and whether anything may become visible by being animated.
+    ///
+    /// Both are off on iOS, and not by preference. Animating a view's position
+    /// there on .NET 10 makes it report a spurious size change when the
+    /// animation finishes; the measured size drifts a couple of points and
+    /// layout restarts indefinitely, which pegs the main thread
+    /// (dotnet/maui#33934, and #32586 before it - the cause is the iOS
+    /// SafeArea code invalidating parent layouts). A deal animates a dozen
+    /// card positions at once, which is why that is where the table locked up,
+    /// and only on iOS.
+    ///
+    /// Driving TranslationX/Y through VisualElement.Animate rather than MAUI's
+    /// TranslateToAsync extension was NOT enough: both finish through the same
+    /// animation manager, which is where the spurious size change comes from.
+    /// Setting the properties directly, as a chip drag does, is fine - it is
+    /// the animated finish that is broken, not the property. A scale is fine
+    /// too, which is why the dealer's hole-card flip still animates.
+    ///
+    /// So on iOS a card simply appears at its place in the hand. The 90ms
+    /// stagger between cards being added still reads as a deal, one card at a
+    /// time. That is a flourish lost, and worth it: a card's visibility must
+    /// never depend on an animation reporting back, which is how this table
+    /// briefly came to deal hands the player could not see at all.
+    ///
+    /// Revisit on a MAUI build carrying the fix for that issue - this can go
+    /// back to true everywhere then, and nothing else needs to change.
+    /// </summary>
+#if IOS || MACCATALYST
+    private static readonly bool AnimatedMotionSupported = false;
+#else
+    private static readonly bool AnimatedMotionSupported = true;
+#endif
+
     /// <summary>War Blackjack only: how long to hold on a hand's War result (won/lost) before dealing the second cards and moving into real blackjack play - see AdvanceWarDecisionQueue/_anyHandWonWarThisRound. Gives a winning Press/Cash-Out tap's result text a beat to actually be read instead of the next cards immediately flying in on top of it.</summary>
     private static readonly TimeSpan WarResultPauseBeforeSecondCards = TimeSpan.FromSeconds(2);
 
@@ -1324,6 +1359,14 @@ public partial class MainPage : ContentPage
     /// <summary>No hand slot was under the release point - glides the ghost smoothly back to where the chip started, then clears it, so a drag that misses reads as "put back down" rather than just vanishing.</summary>
     private async Task ReturnDragGhostHomeAsync()
     {
+        if (!AnimatedMotionSupported)
+        {
+            DragGhostImage.TranslationX = _dragGhostOrigin.X;
+            DragGhostImage.TranslationY = _dragGhostOrigin.Y;
+            await HideDragGhostAsync();
+            return;
+        }
+
         // Same driver as the dealt cards, for the same reason - see AnimateTranslation.
         await RunAnimationAsync(
             AnimateTranslation(DragGhostImage, _dragGhostOrigin.X, _dragGhostOrigin.Y, DragGhostReturnDurationMs, Easing.CubicOut),
@@ -1483,8 +1526,20 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!AnimatedMotionSupported)
+        {
+            // The chip is the player's bet - never invisible waiting on a
+            // fade. See AnimatedMotionSupported.
+            chipImage.Opacity = 1;
+            return;
+        }
+
         chipImage.Opacity = 0;
-        await chipImage.FadeToAsync(1, ChipPlacedAnimationDurationMs);
+
+        await RunAnimationAsync(
+            chipImage.FadeToAsync(1, ChipPlacedAnimationDurationMs),
+            ChipPlacedAnimationDurationMs,
+            () => chipImage.Opacity = 1);
     }
 
     /// <summary>Wipes both of the selected hand's bets (main and, for War Blackjack, its own War bet too) back to $0 - there's no separate "mode" to clear one at a time anymore, so Clear just clears everything on that hand.</summary>
@@ -2084,6 +2139,14 @@ public partial class MainPage : ContentPage
     /// </summary>
     private async Task AnimateCardFromShoe(View cardImage)
     {
+        if (!AnimatedMotionSupported)
+        {
+            // Deliberately nothing - not even a fade. The card is already at
+            // its place in the hand and already visible, which is the one
+            // thing that has to be true. See AnimatedMotionSupported.
+            return;
+        }
+
         cardImage.Opacity = 0;
 
         // Let MAUI finish a layout pass so the card actually has real Bounds
@@ -3098,6 +3161,19 @@ public partial class MainPage : ContentPage
         if (startDelayMs > 0)
         {
             await Task.Delay(startDelayMs);
+        }
+
+        if (!AnimatedMotionSupported)
+        {
+            // Fade out where they sit rather than flying to the tray. Safe to
+            // animate because nothing depends on it finishing - the images are
+            // removed by ClearTableForNewRound either way.
+            await RunAnimationAsync(
+                cardView.FadeToAsync(0, CardDiscardAnimationDurationMs),
+                CardDiscardAnimationDurationMs,
+                () => cardView.Opacity = 0);
+
+            return;
         }
 
         var cardPosition = GetPositionOnPage(cardView);

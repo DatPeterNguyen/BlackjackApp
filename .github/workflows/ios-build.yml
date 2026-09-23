@@ -83,6 +83,19 @@ jobs:
         # workload restore installed workloads for anyway.
         run: dotnet restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
 
+      - name: Report the resolved MAUI version
+        # Which MAUI this runner actually builds against is not visible in the
+        # csproj: it references $(MauiVersion), which comes from whatever
+        # workload the SDK selected by dotnet-version above installed. More
+        # than one iOS layout and animation bug this app has run into is
+        # version-specific - dotnet/maui#33934 among them - so print it where
+        # the build log will show it, rather than inferring it from a developer
+        # machine's obj/ folder, which can be several versions behind.
+        run: |
+          echo "SDK: $(dotnet --version)"
+          grep -o '"Microsoft.Maui.Controls/[0-9][^"]*"' \
+            BlackjackApp.Maui/obj/project.assets.json | sort -u || true
+
       - name: Run BlackjackApp.core unit tests
         # Cheap correctness gate before spending macOS-runner minutes on the
         # actual iOS build - fails fast if a change broke game logic.
@@ -133,11 +146,25 @@ jobs:
           xcrun simctl bootstatus "$DEVICE_ID" -b
 
           xcrun simctl install "$DEVICE_ID" "${{ steps.find-app.outputs.app_path }}"
+
+          # Capture what the app writes to the device log as it starts. Without
+          # this, a startup exception or a runaway layout is invisible from
+          # here - the screenshot below only shows that SOMETHING rendered, not
+          # whether the app is quietly throwing behind it. Started before the
+          # launch so nothing early is missed.
+          mkdir -p simulator-logs
+          xcrun simctl spawn "$DEVICE_ID" log stream --level debug --style compact \
+            --predicate 'processImagePath CONTAINS "BlackjackApp"' \
+            > simulator-logs/app-launch.log 2>&1 &
+          LOG_PID=$!
+
           xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID"
 
           # Let the start-menu screen (and its daily-reward popup, if one's
           # due) finish rendering before the screenshot below.
-          sleep 5
+          sleep 8
+
+          kill "$LOG_PID" 2>/dev/null || true
 
       - name: Screenshot the running app
         run: |
@@ -149,6 +176,14 @@ jobs:
         with:
           name: BlackjackApp-iOS-Simulator-Screenshot
           path: simulator-screenshots/
+          retention-days: 14
+
+      - name: Upload the simulator log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackjackApp-iOS-Simulator-Log
+          path: simulator-logs/
           retention-days: 14
 
       - name: Shut down the simulator
