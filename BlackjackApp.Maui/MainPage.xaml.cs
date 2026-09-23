@@ -2114,18 +2114,18 @@ public partial class MainPage : ContentPage
             _hands.Count > 0 ? _hands.Max(h => h.Hand.Cards.Count) : 0,
             _dealerHand.Cards.Count);
 
-        // Each card's flight is started here and awaited at the bottom, not
-        // in the loop. The cards are still ADDED strictly one at a time in
-        // dealing order - that part is synchronous, at the top of
-        // DealAnimatedCard - so the deal still goes round the table the way a
-        // real dealer works it. What changes is that a card no longer has to
-        // land before the next one is pitched, which is also what a real deal
-        // looks like: there are two or three cards in the air at once.
-        // Waiting for each one cost 310ms per card, so a five-hand round took
-        // the better part of four seconds, with the action rail empty for all
-        // of it. That is the bulk of what reads as the game hanging on a deal.
-        var cardsInFlight = new List<Task>();
-
+        // One card at a time: each is awaited all the way down before the next
+        // is pitched, so the pace is the animation plus the stagger and the
+        // deal reads as a dealer working round the table.
+        //
+        // These flights were briefly overlapped, to cut what a five-hand deal
+        // cost when every card waited its turn. That was solving a problem
+        // caused by animating card positions on iOS, and since iOS no longer
+        // animates them at all (see AnimatedMotionSupported) the overlap had
+        // nothing left to buy - it just made the deal look hurried everywhere
+        // that does still animate. Where there is no animation the await
+        // returns immediately, so the stagger alone paces those platforms and
+        // this same loop is unhurried on one and brisk on the other.
         for (var round = 0; round < maxRounds; round++)
         {
             for (var i = _hands.Count - 1; i >= 0; i--)
@@ -2138,7 +2138,7 @@ public partial class MainPage : ContentPage
                 }
 
                 var view = _handSlotViews[i];
-                cardsInFlight.Add(DealAnimatedCard(view.CardsLayout, CardImageFile(slot.Hand.Cards[round]), HandSlotCardHeight));
+                await DealAnimatedCard(view.CardsLayout, CardImageFile(slot.Hand.Cards[round]), HandSlotCardHeight);
 
                 // As soon as THIS hand's own cards are all down, show its
                 // value - and, if it was already cashed out as an immediate
@@ -2160,16 +2160,12 @@ public partial class MainPage : ContentPage
             {
                 var showFaceDown = hideDealerHoleCard && round == 1;
                 var imageFile = showFaceDown ? CardBackFile : CardImageFile(_dealerHand.Cards[round]);
-                cardsInFlight.Add(DealAnimatedCard(DealerCardsLayout, imageFile, DealerCardHeight));
+                await DealAnimatedCard(DealerCardsLayout, imageFile, DealerCardHeight);
                 await Task.Delay(CardDealStaggerMs);
             }
         }
 
-        // Everything downstream - insurance prompts, turn order, the dealer's
-        // own play - is entitled to assume the table has settled, so the deal
-        // is not finished until the last card has actually landed.
-        await Task.WhenAll(cardsInFlight);
-        Trace($"opening deal done, {cardsInFlight.Count} cards");
+        Trace("opening deal done");
 
         UpdateDealerValueLabel(hideDealerHoleCard);
     }
@@ -2550,24 +2546,20 @@ public partial class MainPage : ContentPage
     /// </summary>
     private async Task RevealSecondCards()
     {
-        // Overlapped for the same reason as the opening deal - see the note
-        // on cardsInFlight in RevealOpeningDeal.
-        var cardsInFlight = new List<Task>();
-
+        // One card at a time, for the reasons in RevealOpeningDeal.
         for (var i = _hands.Count - 1; i >= 0; i--)
         {
             var slot = _hands[i];
             var view = _handSlotViews[i];
             var newCard = slot.Hand.Cards[^1];
 
-            cardsInFlight.Add(DealAnimatedCard(view.CardsLayout, CardImageFile(newCard), HandSlotCardHeight));
+            await DealAnimatedCard(view.CardsLayout, CardImageFile(newCard), HandSlotCardHeight);
             view.ValueLabel.Text = $"Value: {slot.Hand.GetBestValue().Value}";
             view.ResultLabel.Text = slot.ResultText;
             await Task.Delay(CardDealStaggerMs);
         }
 
-        cardsInFlight.Add(DealAnimatedCard(DealerCardsLayout, CardBackFile, DealerCardHeight)); // the dealer's second card stays hidden as the hole card
-        await Task.WhenAll(cardsInFlight);
+        await DealAnimatedCard(DealerCardsLayout, CardBackFile, DealerCardHeight); // the dealer's second card stays hidden as the hole card
         UpdateDealerValueLabel(hideHoleCard: true);
     }
 
