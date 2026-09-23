@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BlackjackApp.Maui.Views.ShopPage"
+             Title="Shop"
+             BackgroundColor="#2A4D00">
+
+    <!--
+        The chip shop (start menu only - see GameMenuPage's ShopButton).
+        A shelf, not a till: every bundle is shown and none can be bought.
+
+        BlackjackApp.core.Services.IChipPurchaseService has no implementation,
+        so nothing here can charge anyone, and each bundle's button is
+        disabled and says so rather than pretending to be a store. The
+        catalogue and the prices come from ChipShop, where the prices are
+        documented as indicative rather than agreed.
+
+        Rows are built in code-behind from ChipShop.Bundles, and stacked
+        vertically rather than laid out side by side like the art kit's own
+        shop: one column reads the same on a 393pt phone in portrait as on a
+        desktop window, and it avoids handing a wrapping layout an
+        unconstrained width inside a ScrollView, which is the measurement
+        trap that has already cost this project three defects.
+    -->
+    <Grid SafeAreaEdges="None">
+        <!--
+            SafeAreaEdges="None" keeps the art full-bleed behind the notch;
+            the content layer below opts back in, so only the controls move
+            inwards. .NET 10 made layouts inset themselves by default.
+        -->
+        <Image Source="backdrop_purple.png" Aspect="AspectFill" InputTransparent="True"/>
+        <Image Source="felt_green.png" Aspect="AspectFill" InputTransparent="True"/>
+
+        <ScrollView SafeAreaEdges="Container">
+            <VerticalStackLayout Padding="24" Spacing="12" VerticalOptions="Center">
+
+                <Label Text="Chip Shop" Style="{StaticResource FeltHeading}" FontSize="33" HorizontalOptions="Center"/>
+
+                <!-- Said plainly and up front, so nobody taps a bundle expecting a payment sheet. -->
+                <Border Style="{StaticResource ReadoutPlate}" HorizontalOptions="Center" Padding="14,8" Margin="0,0,0,4">
+                    <VerticalStackLayout Spacing="1">
+                        <Label Text="COMING SOON" Style="{StaticResource ReadoutText}" FontSize="17" HorizontalOptions="Center"/>
+                        <Label Text="Buying chips isn't switched on yet - this is a preview of what will be here."
+                               Style="{StaticResource ReadoutText}" FontSize="12" FontFamily="OpenSansRegular"
+                               HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Label x:Name="BalanceLabel" Text="" Style="{StaticResource FeltHeading}" TextColor="#FFC400"
+                       FontSize="18" HorizontalOptions="Center" Margin="0,0,0,4"/>
+
+                <!-- One card per ChipShop bundle - see ShopPage.xaml.cs BuildBundles. -->
+                <VerticalStackLayout x:Name="BundlesLayout" Spacing="10"/>
+
+                <Label Text="Chips have no cash value and cannot be exchanged for money."
+                       Style="{StaticResource FeltCaption}" FontSize="11"
+                       HorizontalOptions="Center" HorizontalTextAlignment="Center" Margin="0,8,0,0"/>
+
+                <Button x:Name="CloseButton" Text="Close" Style="{StaticResource RedButton}"
+                        HeightRequest="46" Margin="0,10,0,0" Clicked="CloseButton_OnClicked"/>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

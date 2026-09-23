@@ -71,6 +71,8 @@
                 <Button x:Name="DailyRewardButton" Text="Daily Reward" Style="{StaticResource GoldButton}" HeightRequest="50" FontSize="20" Clicked="DailyRewardButton_OnClicked"/>
                 <!-- Start menu only - the local high-score table (see Views/LeaderboardPage). -->
                 <Button x:Name="LeaderboardButton" Text="Leaderboard" Style="{StaticResource BlueButton}" HeightRequest="50" FontSize="20" Clicked="LeaderboardButton_OnClicked"/>
+                <!-- Start menu only. Opens the chip shop, which is a preview: nothing in it can be bought - see ShopPage and BlackjackApp.core.Services.IChipPurchaseService. -->
+                <Button x:Name="ShopButton" Text="Chip Shop" Style="{StaticResource GoldButton}" HeightRequest="50" FontSize="20" Clicked="ShopButton_OnClicked"/>
                 <Button x:Name="TableSettingsButton" Text="Table Settings" Style="{StaticResource BlueButton}" HeightRequest="50" FontSize="20" Clicked="TableSettingsButton_OnClicked"/>
                 <!-- Mid-game only - abandons the current game entirely and returns to the real start menu, where a new game (mode/decks/hands and all) can be started fresh. -->
                 <Button x:Name="ExitToMenuButton" Text="Exit to Menu" Style="{StaticResource RedButton}" HeightRequest="46" Margin="0,10,0,0" Clicked="ExitToMenuButton_OnClicked"/>

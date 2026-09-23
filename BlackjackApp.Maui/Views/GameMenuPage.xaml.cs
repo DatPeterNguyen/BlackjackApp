@@ -65,6 +65,7 @@ public partial class GameMenuPage : ContentPage
         ExitToMenuButton.IsVisible = !isStartMenu;
         DailyRewardButton.IsVisible = isStartMenu;
         LeaderboardButton.IsVisible = isStartMenu;
+        ShopButton.IsVisible = isStartMenu;
         CloseButton.IsVisible = !isStartMenu;
         RefreshVariantSummary();
 
@@ -91,6 +92,12 @@ public partial class GameMenuPage : ContentPage
     private async void LeaderboardButton_OnClicked(object? sender, EventArgs e)
     {
         await Navigation.PushModalAsync(new LeaderboardPage());
+    }
+
+    /// <summary>Start menu only - opens the chip shop. It is a shelf with nothing behind the counter: every bundle is shown and none can be bought, because IChipPurchaseService has no implementation.</summary>
+    private async void ShopButton_OnClicked(object? sender, EventArgs e)
+    {
+        await Navigation.PushModalAsync(new ShopPage());
     }
 
     private async Task ShowCheckInAsync()
