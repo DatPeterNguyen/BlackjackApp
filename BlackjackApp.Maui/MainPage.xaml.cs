@@ -1203,9 +1203,22 @@ public partial class MainPage : ContentPage
             && ChipWallet.IsWithinTableLimits(doubledBet)
             && _wallet.Balance >= slot.Bet;
 
-        SplitButton.IsVisible = !slot.HasBeenSplit
-            && _variant.CanSplit(slot.Hand)
-            && _wallet.Balance >= slot.Bet;
+        // Deliberately NOT gated on affording the second bet, unlike Double
+        // above. A pair is the thing a player actively watches for, and a pair
+        // of Aces most of all - a button that simply is not there reads as the
+        // game failing to notice the pair, not as a rule about money. So it
+        // shows whenever the rules allow the split, and SplitAsync says why if
+        // the chips are not there. That is what the "Not enough chips to split
+        // this hand" message in it was always for; until now it was unreachable
+        // code, because this line hid the button in exactly the case that
+        // would have produced it. The two halves disagreed, and the player saw
+        // the disagreement as a missing option.
+        SplitButton.IsVisible = !slot.HasBeenSplit && _variant.CanSplit(slot.Hand);
+
+        if (SplitButton.IsVisible && _wallet.Balance < slot.Bet)
+        {
+            Trace($"split is legal here but costs {slot.Bet} with {_wallet.Balance} left");
+        }
     }
 
     /// <summary>

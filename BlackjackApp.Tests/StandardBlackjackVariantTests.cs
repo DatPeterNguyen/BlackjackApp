@@ -122,6 +122,18 @@ public class StandardBlackjackVariantTests
     }
 
     [Test]
+    public void CanSplit_TrueForAPairOfAces()
+    {
+        // The pair a player most wants to split, and the one that reads as
+        // broken if it is ever refused. Splitting them is allowed; what the
+        // Ace rule actually restricts is what happens afterwards - one card
+        // to each half and no further action (see MainPage.SplitAsync).
+        var pairOfAces = HandOf((Suit.Spades, Rank.Ace), (Suit.Hearts, Rank.Ace));
+
+        Assert.That(_variant.CanSplit(pairOfAces), Is.True);
+    }
+
+    [Test]
     public void CanSplit_FalseForNonMatchingValues()
     {
         var fiveNine = HandOf((Suit.Spades, Rank.Five), (Suit.Hearts, Rank.Nine));
