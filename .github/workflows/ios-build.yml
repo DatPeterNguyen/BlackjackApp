@@ -101,7 +101,7 @@ jobs:
         # actual iOS build - fails fast if a change broke game logic.
         run: dotnet test BlackjackApp.Tests/BlackjackApp.Tests.csproj -c Release
 
-      - name: Build for iOS Simulator
+      - name: Build for iOS Simulator (Debug)
         run: >
           dotnet build BlackjackApp.Maui/BlackjackApp.Maui.csproj
           -f net10.0-ios
@@ -109,7 +109,41 @@ jobs:
           -p:RuntimeIdentifier=iossimulator-arm64
           -p:BuildIpa=false
 
-      - name: Locate the built .app bundle
+      - name: Build for iOS Simulator (Release)
+        # The Debug build above is for reading logs from: it carries debug
+        # metadata, runs managed code unoptimised, and is the only
+        # configuration where the layout trace in OnSizeAllocated compiles in.
+        # It is NOT the configuration to judge performance by - a MAUI iOS
+        # Debug build is materially slower than Release at exactly the kind of
+        # work dealing a hand does, and slower still when a hosted simulator
+        # service is streaming it over a network. So both come out of this
+        # workflow: install Release to decide whether the app is genuinely
+        # wrong, install Debug when you need the log to say why.
+        run: >
+          dotnet build BlackjackApp.Maui/BlackjackApp.Maui.csproj
+          -f net10.0-ios
+          -c Release
+          -p:RuntimeIdentifier=iossimulator-arm64
+          -p:BuildIpa=false
+
+      - name: Locate the Release .app bundle
+        id: find-app-release
+        run: |
+          APP_PATH=$(find BlackjackApp.Maui/bin/Release/net10.0-ios -maxdepth 2 -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No Release .app bundle found - build likely failed earlier." >&2
+            exit 1
+          fi
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the Release .app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackjackApp-iOS-Simulator-Release
+          path: ${{ steps.find-app-release.outputs.app_path }}
+          retention-days: 14
+
+      - name: Locate the Debug .app bundle
         id: find-app
         run: |
           APP_PATH=$(find BlackjackApp.Maui/bin/Debug/net10.0-ios -maxdepth 2 -name "*.app" -type d | head -1)
@@ -119,14 +153,14 @@ jobs:
           fi
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Upload .app bundle as a build artifact
+      - name: Upload the Debug .app bundle
         uses: actions/upload-artifact@v4
         with:
-          name: BlackjackApp-iOS-Simulator
+          name: BlackjackApp-iOS-Simulator-Debug
           path: ${{ steps.find-app.outputs.app_path }}
           retention-days: 14
 
-      - name: Boot a simulator and install the app
+      - name: Boot a simulator and install the Debug build
         # The runner has no display and this workflow has no human at the
         # keyboard, so there's no way to actually tap around the app from
         # here - what this CAN prove, headlessly, is that it genuinely
