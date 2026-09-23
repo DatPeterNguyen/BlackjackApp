@@ -40,6 +40,19 @@
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
 
+		<!--
+			The saved-round and leaderboard blobs go through JsonSerializer
+			against plain classes, with no source-generated context, so
+			serialization needs reflection over those types at runtime. A
+			Release iOS build links the assemblies, and a linker with no reason
+			to keep that metadata will drop it - which would break saving and
+			resuming a round in Release only, while Debug carried on working.
+			That is a confusing failure to chase, so keep reflection on
+			explicitly. The alternative, and the better long-term answer, is a
+			JsonSerializerContext for InProgressRoundState and LeaderboardEntry.
+		-->
+		<JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
