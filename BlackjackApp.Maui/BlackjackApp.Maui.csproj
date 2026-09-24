@@ -8,7 +8,16 @@
 		<!--
 			Building the Windows app for people to download:
 
-			    dotnet publish BlackjackApp.Maui\BlackjackApp.Maui.csproj -c Release -p:Distributable=true
+			    dotnet publish BlackjackApp.Maui\BlackjackApp.Maui.csproj -f net10.0-windows10.0.19041.0 -c Release -p:Distributable=true
+
+			-f is still needed even though the flag leaves exactly one
+			framework: a project that sets TargetFrameworks at all counts as
+			cross targeting, so Publish insists on being told which one
+			(NETSDK1129). It is also the safe flag to pass, unlike the rest.
+			It sets TargetFramework, singular, and the SDK negotiates a
+			compatible framework for project references rather than forcing
+			its own on them - which is why BlackjackApp.core still builds as
+			net10.0 under it.
 
 			Everything that build needs lives here rather than on the command
 			line, because the obvious command line does not work. Passing a

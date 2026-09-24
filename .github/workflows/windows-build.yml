@@ -75,6 +75,7 @@ jobs:
         # BlackjackApp.Maui.csproj for exactly how each of those fails.
         run: >
           dotnet publish BlackjackApp.Maui/BlackjackApp.Maui.csproj
+          -f net10.0-windows10.0.19041.0
           -c Release
           -p:Distributable=true
 
