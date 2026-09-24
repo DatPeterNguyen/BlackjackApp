@@ -5,6 +5,31 @@
 		<TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('linux'))">$(TargetFrameworks);net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
 		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
 
+		<!--
+			Building the Windows app for people to download:
+
+			    dotnet publish BlackjackApp.Maui\BlackjackApp.Maui.csproj -c Release -p:Distributable=true
+
+			Everything that build needs lives here rather than on the command
+			line, because the obvious command line does not work. Passing a
+			runtime identifier and the self-contained switch sets GLOBAL
+			MSBuild properties, and -f only chooses what to publish, not what
+			to restore. So "win-x64, self contained" also lands on the Android
+			target, which runs on Mono and goes hunting for a Mono runtime pack
+			for win-x64 that has never existed (NU1102). Overriding
+			TargetFrameworks on the command line to dodge that is worse: global
+			properties flow into referenced projects too, so it tells
+			BlackjackApp.core, a plain net10.0 library, that it is a Windows
+			app, and its restore comes back with no net10.0 target at all
+			(NETSDK1005).
+
+			One custom flag avoids both. It narrows this project to the Windows
+			framework, and the settings below are scoped to that framework as
+			well, so no other target ever sees them. BlackjackApp.core simply
+			ignores a property it never mentions.
+		-->
+		<TargetFrameworks Condition="'$(Distributable)' == 'true'">net10.0-windows10.0.19041.0</TargetFrameworks>
+
 		<!-- Note for MacCatalyst:
 		The default runtime is maccatalyst-x64, except in Release config, in which case the default is maccatalyst-x64;maccatalyst-arm64.
 		When specifying both architectures, use the plural <RuntimeIdentifiers> instead of the singular <RuntimeIdentifier>.
@@ -58,6 +83,22 @@
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
 		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
+	</PropertyGroup>
+
+	<!--
+		The distributable Windows build carries its own .NET runtime and its own
+		Windows App SDK, so someone downloading it needs nothing installed
+		first. Scoped to the Windows framework so no other target inherits a
+		runtime identifier that means nothing to it - see the note on
+		Distributable above.
+	-->
+	<PropertyGroup Condition="'$(Distributable)' == 'true' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<SelfContained>true</SelfContained>
+		<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+	</PropertyGroup>
+
+	<PropertyGroup>
 
 		<!-- Set directly rather than relying on Rider/MSBuild auto-detecting
 		     the ANDROID_HOME environment variable, since that detection can

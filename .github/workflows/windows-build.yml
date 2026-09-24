@@ -67,24 +67,16 @@ jobs:
         # with the app instead of having to be installed. --self-contained does
         # the same for the .NET runtime itself.
         #
-        # TargetFrameworks is overridden to Windows alone, and that is load
-        # bearing. -f picks which framework to PUBLISH, but restore still
-        # evaluates every framework in the project - and -r/--self-contained
-        # are global MSBuild properties, so they land on the Android target
-        # too. Android runs on Mono, so it goes looking for a
-        # Microsoft.NETCore.App.Runtime.Mono.win-x64 runtime pack, which does
-        # not exist, and the whole publish dies on NU1102. Restricting the
-        # project to the one framework being published keeps the other three
-        # out of restore entirely.
+        # One flag. The framework, the runtime identifier and the
+        # self-contained settings all live in the csproj behind
+        # $(Distributable), because setting them here instead sets global
+        # MSBuild properties that leak onto the Android target and into the
+        # referenced class library - see the long note in
+        # BlackjackApp.Maui.csproj for exactly how each of those fails.
         run: >
           dotnet publish BlackjackApp.Maui/BlackjackApp.Maui.csproj
-          -f net10.0-windows10.0.19041.0
           -c Release
-          -r win-x64
-          --self-contained true
-          -p:TargetFrameworks=net10.0-windows10.0.19041.0
-          -p:WindowsPackageType=None
-          -p:WindowsAppSDKSelfContained=true
+          -p:Distributable=true
 
       - name: Find the publish folder
         id: publish
