@@ -54,12 +54,9 @@ jobs:
             windows-nuget-
 
       - name: Restore MAUI workloads
-        # Restores every workload the project's TargetFrameworks ask for, which
-        # on a Windows runner means the Android and iOS ones too. Slower than
-        # installing maui-windows alone, but NuGet restore is project-wide
-        # rather than per-framework, so the other frameworks have to resolve
-        # even though only Windows is being published here.
-        run: dotnet workload restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
+        # Only the Windows workload, because the publish below restricts the
+        # project to the Windows framework - nothing else has to resolve.
+        run: dotnet workload install maui-windows
 
       - name: Run BlackjackApp.core unit tests
         run: dotnet test BlackjackApp.Tests/BlackjackApp.Tests.csproj -c Release
@@ -69,12 +66,23 @@ jobs:
         # Store. WindowsAppSDKSelfContained means the Windows App SDK travels
         # with the app instead of having to be installed. --self-contained does
         # the same for the .NET runtime itself.
+        #
+        # TargetFrameworks is overridden to Windows alone, and that is load
+        # bearing. -f picks which framework to PUBLISH, but restore still
+        # evaluates every framework in the project - and -r/--self-contained
+        # are global MSBuild properties, so they land on the Android target
+        # too. Android runs on Mono, so it goes looking for a
+        # Microsoft.NETCore.App.Runtime.Mono.win-x64 runtime pack, which does
+        # not exist, and the whole publish dies on NU1102. Restricting the
+        # project to the one framework being published keeps the other three
+        # out of restore entirely.
         run: >
           dotnet publish BlackjackApp.Maui/BlackjackApp.Maui.csproj
           -f net10.0-windows10.0.19041.0
           -c Release
           -r win-x64
           --self-contained true
+          -p:TargetFrameworks=net10.0-windows10.0.19041.0
           -p:WindowsPackageType=None
           -p:WindowsAppSDKSelfContained=true
 
