@@ -165,7 +165,22 @@ jobs:
         # tapping specific points and hit-testing what's there - which is
         # what turns the boot-and-screenshot step below into an actual
         # regression test for the Play freeze instead of a boot check.
-        run: brew install facebook/fb/idb
+        #
+        # Recent Homebrew versions refuse to load a formula from a
+        # third-party tap (like this one) until it's explicitly trusted -
+        # `brew install facebook/fb/idb` alone taps it automatically, then
+        # fails right after with "Refusing to load formula ... from
+        # untrusted tap". Tap it first so there's something to trust, then
+        # trust it. The whole-tap form is tried first; the error message's
+        # own suggested per-formula form (naming the underlying formula,
+        # idb-cli, not the idb alias) is the fallback, since a per-formula
+        # `--formula` trust has been reported broken in some Homebrew
+        # versions.
+        run: |
+          brew tap facebook/fb
+          brew trust facebook/fb || brew trust --formula facebook/fb/idb-cli || \
+            echo "::warning::brew trust failed via both known forms - the install below may still fail"
+          brew install facebook/fb/idb
 
       - name: Boot a simulator and install the Debug build, then tap through Play
         # The runner has no display and no human at the keyboard, but idb
