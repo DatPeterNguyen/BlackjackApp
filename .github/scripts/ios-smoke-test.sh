@@ -137,15 +137,15 @@ stage_idb_sees_ui() {
   sleep 5   # let the first screen draw
   shot 01-launched
   local out
-  out=$(ui probe 196 400 2>&1)
+  out=$(ui probe 196 400 --wait 120 2>&1)
   local rc=$?
   echo "$out"
-  if [ $rc -eq 0 ]; then
-    DETAIL="$(echo "$out" | tail -n 1)"
-    return 0
+  echo "$out" > "$OUT/idb-probe.log"
+  DETAIL="$(echo "$out" | tail -n 1 | cut -c1-400)"
+  if [ $rc -ne 0 ] && ! app_running; then
+    DETAIL="$DETAIL (and the app process is gone)"
   fi
-  DETAIL="idb can't read this simulator's UI: $(echo "$out" | head -n 1 | cut -c1-300)"
-  return 1
+  return $rc
 }
 
 stage_start_menu() {
@@ -316,11 +316,16 @@ stage_crash_reports() {
 
 stage_log_scan() {
   local loops exceptions notes=()
+  # Keep the matching lines, with the report UIKit prints after them, so
+  # they can be read without opening the whole log.
+  grep -i -A 40 'feedback loop' "$OUT/app-oslog.log" > "$OUT/layout-loop.txt" 2>/dev/null || true
+  grep -iE -B 2 -A 20 'unhandled exception|System\.[A-Za-z]+Exception' "$OUT/app-stdout.log" "$OUT/app-oslog.log" \
+    > "$OUT/exceptions.txt" 2>/dev/null || true
   loops=$(grep -ci 'feedback loop' "$OUT/app-oslog.log" 2>/dev/null || true)
   exceptions=$(grep -ciE 'unhandled exception|System\.[A-Za-z]+Exception' "$OUT/app-stdout.log" "$OUT/app-oslog.log" 2>/dev/null \
                | awk -F: '{s+=$NF} END {print s+0}')
-  [ "${loops:-0}" -gt 0 ] && notes+=("UIKit reported a layout feedback loop $loops time(s)")
-  [ "${exceptions:-0}" -gt 0 ] && notes+=("$exceptions .NET exception line(s) in the logs")
+  [ "${loops:-0}" -gt 0 ] && notes+=("layout feedback loop mentioned $loops time(s), first: \"$(grep -i -m1 'feedback loop' "$OUT/app-oslog.log" | cut -c1-300)\" - full report in layout-loop.txt")
+  [ "${exceptions:-0}" -gt 0 ] && notes+=("$exceptions .NET exception line(s), first: \"$(grep -hiE -m1 'unhandled exception|System\.[A-Za-z]+Exception' "$OUT/app-stdout.log" "$OUT/app-oslog.log" 2>/dev/null | head -1 | cut -c1-300)\" - see exceptions.txt")
   if [ ${#notes[@]} -gt 0 ]; then
     DETAIL="$(IFS='; '; echo "${notes[*]}")"
     return 2

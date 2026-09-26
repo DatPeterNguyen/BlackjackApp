@@ -3,8 +3,9 @@
 
 Used by ios-smoke-test.sh. Every command needs --udid <simulator>.
 
-  probe X Y               print what's at (X, Y) and how many elements
-                          describe-all returns; exit 1 if idb can't answer
+  probe X Y [--wait S]    retry until idb can read the UI (either lookup
+                          method), printing every attempt; exit 1 if it
+                          never can
   find LABEL [LABEL ...]  wait until any LABEL is on screen, then print
                           FOUND<TAB>label<TAB>x<TAB>y<TAB>method
                           (--tap also taps it; exit 1 on timeout, 3 as soon
@@ -217,12 +218,35 @@ def cmd_responsive(a):
 
 
 def cmd_probe(a):
-    rc, out = idb("ui", "describe-point", str(a.x), str(a.y))
-    print("describe-point %d %d (exit %d): %s" % (a.x, a.y, rc, out))
-    elements = describe_all()
-    print("describe-all: %s" % ("%d elements - fast lookups available" % len(elements)
-                                if elements is not None else "unusable here - falling back to point scans"))
-    return 0 if rc == 0 else 1
+    """Wait until idb can read the app's UI one way or the other.
+
+    The first idb call on a fresh runner also starts idb's companion
+    process, which can take longer than a normal call - one CI run timed
+    out on exactly that. And straight after launch the accessibility bridge
+    can answer "No translation object returned" before it's ready. So keep
+    asking, at a few different points, with a generous per-call timeout,
+    and accept either lookup method working."""
+    points = [(a.x, a.y), (196, 200), (100, 600), (300, 120)]
+    deadline = time.time() + a.wait
+    attempt = 0
+    while True:
+        attempt += 1
+        x, y = points[(attempt - 1) % len(points)]
+        rc, out = idb("ui", "describe-point", str(x), str(y), timeout=45)
+        point_ok = rc == 0 and parse_json(out) is not None
+        print("attempt %d: describe-point %d %d -> exit %d: %s" % (attempt, x, y, rc, out[:300]))
+        elements = describe_all()
+        if elements is not None:
+            print("describe-all: %d elements - fast lookups available" % len(elements))
+        if point_ok or elements is not None:
+            how = "describe-all (%d elements)" % len(elements) if elements is not None else "point scans only"
+            print("idb can read the UI after %d attempt(s) via %s" % (attempt, how))
+            return 0
+        if time.time() >= deadline:
+            print("idb still can't read the UI after %d attempt(s) over %ss. Last answer: %s"
+                  % (attempt, a.wait, out[:300]))
+            return 1
+        time.sleep(3)
 
 
 def cmd_tap(a):
@@ -268,6 +292,7 @@ def main():
     pr = sub.add_parser("probe")
     pr.add_argument("x", type=int)
     pr.add_argument("y", type=int)
+    pr.add_argument("--wait", type=float, default=120, help="keep retrying for this many seconds")
     pr.set_defaults(fn=cmd_probe)
 
     t = sub.add_parser("tap")
