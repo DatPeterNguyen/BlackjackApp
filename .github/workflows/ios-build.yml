@@ -60,6 +60,14 @@ concurrency:
 permissions:
   contents: read
 
+# Explicitly bash, because GitHub only adds -o pipefail when the shell is
+# named. Without it, a failure on the left of a pipe is silently ignored:
+# `curl ... | bash` with a dead URL "succeeds" having installed nothing,
+# which is exactly how a missing Maestro got past its install step.
+defaults:
+  run:
+    shell: bash
+
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -138,15 +146,15 @@ jobs:
         # introduced in specific MAUI releases. So it goes in the summary.
         run: |
           MAUI=$( (grep -o '"Microsoft.Maui.Controls/[0-9][^"]*"' BlackjackApp.Maui/obj/project.assets.json || true) \
-                 | head -1 | tr -d '"' | cut -d/ -f2)
+                 | sed -n 1p | tr -d '"' | cut -d/ -f2)
           ADMOB=$( (grep -o '"Plugin.MauiMTAdmob/[0-9][^"]*"' BlackjackApp.Maui/obj/project.assets.json || true) \
-                 | head -1 | tr -d '"' | cut -d/ -f2)
+                 | sed -n 1p | tr -d '"' | cut -d/ -f2)
           {
             echo "### Toolchain"
             echo
             echo "| | |"
             echo "|---|---|"
-            echo "| Xcode | $(xcodebuild -version | head -1 | cut -d' ' -f2) |"
+            echo "| Xcode | $(xcodebuild -version | sed -n 1p | cut -d' ' -f2) |"
             echo "| .NET SDK | $(dotnet --version) |"
             echo "| MAUI (Microsoft.Maui.Controls) | ${MAUI:-unknown} |"
             echo "| Plugin.MauiMTAdmob | ${ADMOB:-unknown} |"
@@ -233,9 +241,20 @@ jobs:
           merge-multiple: true
 
       - name: Install Maestro
+        # get.maestro.mobile.dev redirects to Maestro's official install
+        # script, which puts the CLI in ~/.maestro/bin. -f makes curl fail on
+        # an HTTP error instead of handing bash an error page, and the check
+        # after it fails this step, loudly, if there's still no maestro.
         run: |
-          curl -Ls "https://get.maestro.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          MAESTRO_BIN="$HOME/.maestro/bin"
+          if [ ! -x "$MAESTRO_BIN/maestro" ]; then
+            echo "::error::Maestro's installer ran but $MAESTRO_BIN/maestro doesn't exist"
+            ls -la "$HOME/.maestro" 2>/dev/null || true
+            exit 1
+          fi
+          echo "$MAESTRO_BIN" >> "$GITHUB_PATH"
+          "$MAESTRO_BIN/maestro" --version
 
       - name: Boot a simulator
         # Exactly one booted simulator, so Maestro has no choice to make
@@ -248,7 +267,6 @@ jobs:
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
           xcrun simctl boot "$DEVICE_ID"
           xcrun simctl bootstatus "$DEVICE_ID" -b > /dev/null
-          maestro --version
 
       - name: Run the smoke test on each build
         run: bash .github/scripts/smoke-test-ios.sh apps
