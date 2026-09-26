@@ -15,12 +15,14 @@ on:
       - 'BlackjackApp.Maui/**'
       - 'BlackjackApp.core/**'
       - '.github/workflows/ios-build.yml'
+      - '.github/scripts/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'BlackjackApp.Maui/**'
       - 'BlackjackApp.core/**'
       - '.github/workflows/ios-build.yml'
+      - '.github/scripts/**'
   workflow_dispatch: {}
 
 jobs:
@@ -182,278 +184,52 @@ jobs:
             echo "::warning::brew trust failed via both known forms - the install below may still fail"
           brew install facebook/fb/idb
 
-      - name: Boot a simulator and install the Debug build, then tap through Play
-        # The runner has no display and no human at the keyboard, but idb
-        # (installed above) can synthesize the same taps a person would -
-        # see the "Automated tap-through" comment below for what this
-        # actually drives the app through and why.
+      - name: Boot a simulator
+        id: boot
+        # One simulator for both smoke-test passes below. Each pass reinstalls
+        # the app, which also wipes its saved data, so both start from a true
+        # first launch.
         run: |
-          BUNDLE_ID="com.companyname.blackjackapp.maui"
-          echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_ENV"
-
           RUNTIME=$(xcrun simctl list runtimes ios --json | python3 -c "import json,sys; runtimes=json.load(sys.stdin)['runtimes']; print(runtimes[-1]['identifier'])")
           echo "Using runtime: $RUNTIME"
-
           DEVICE_ID=$(xcrun simctl create "CI-iPhone" "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$RUNTIME")
-          echo "device_id=$DEVICE_ID" >> "$GITHUB_ENV"
-
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          echo "BUNDLE_ID=com.companyname.blackjackapp.maui" >> "$GITHUB_ENV"
           xcrun simctl boot "$DEVICE_ID"
           xcrun simctl bootstatus "$DEVICE_ID" -b
 
-          xcrun simctl install "$DEVICE_ID" "${{ steps.find-app.outputs.app_path }}"
+      - name: Smoke test the Debug build
+        # What this drives the app through, and what each stage checks, is
+        # listed at the top of .github/scripts/ios-smoke-test.sh. Results show
+        # up as a table on the run's summary page. Debug is the build whose
+        # logs say the most: its [table] trace only compiles in here.
+        timeout-minutes: 25
+        run: bash .github/scripts/ios-smoke-test.sh "${{ steps.find-app.outputs.app_path }}" debug
 
-          # Turn on UIKit's OWN layout feedback loop detector before launching.
-          # The last run's log showed UIKit looking this key up and finding
-          # nothing, which means the detector was simply switched off. With a
-          # threshold set, UIKit reports a view whose layout keeps re-entering
-          # rather than leaving us to infer it from a frozen screen - and
-          # crucially it answers that question whether or not the app's own
-          # logging is working.
-          xcrun simctl spawn "$DEVICE_ID" defaults write "$BUNDLE_ID" \
-            UIViewLayoutFeedbackLoopDebuggingThreshold 100 || true
+      - name: Smoke test the Release build
+        # Release as well, because it's the build closest to what a player
+        # runs: optimised and trimmed, so a freeze that depends on timing, or
+        # on code the trimmer removed, can show up in one build and not the
+        # other. Runs even when the Debug pass failed, so one run answers
+        # both.
+        if: always() && steps.boot.outcome == 'success'
+        timeout-minutes: 25
+        run: bash .github/scripts/ios-smoke-test.sh "${{ steps.find-app-release.outputs.app_path }}" release
 
-          mkdir -p simulator-logs
-
-          # Two logs, because they carry different things. This one is os_log:
-          # UIKit, CoreAnimation, crashes, the feedback-loop detector above.
-          xcrun simctl spawn "$DEVICE_ID" log stream --level debug --style compact \
-            --predicate 'processImagePath CONTAINS "BlackjackApp"' \
-            > simulator-logs/app-oslog.log 2>&1 &
-          LOG_PID=$!
-
-          # And this one is the app's own stdout, where its [table] trace goes.
-          # The os_log stream does NOT carry it: .NET's Console and Debug output
-          # do not reach os_log on iOS, which is why a previous run captured a
-          # launch with not one line of the app's own logging in it. That
-          # silence looked like evidence about the app; it was only evidence
-          # about the logging.
-          xcrun simctl launch --console-pty "$DEVICE_ID" "$BUNDLE_ID" \
-            > simulator-logs/app-stdout.log 2>&1 &
-          APP_PID=$!
-
-          # --console-pty is the part most likely to misbehave on a headless
-          # runner, and it is not worth losing the run over, so fall back to a
-          # plain launch if the app is not actually up.
-          sleep 5
-          if ! xcrun simctl spawn "$DEVICE_ID" launchctl list 2>/dev/null | grep -q blackjackapp; then
-            echo "::warning::--console-pty did not start the app; falling back to a plain launch (no stdout capture)."
-            kill "$APP_PID" 2>/dev/null || true
-            xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID"
-          fi
-
-          # Let the start-menu screen (and its daily-reward popup, if one's
-          # due) finish rendering before driving any taps.
-          sleep 8
-
-          # --- Automated tap-through: Play -> mode picker -> Play ---
-          #
-          # This is the sequence that's been reported to freeze on Appetize
-          # (StartGameWith in GameMenuPage.xaml.cs): press Play on the start
-          # menu, then Play again on the RulesPage mode picker. No earlier
-          # version of this workflow ever pressed anything - it booted the
-          # app and left it on the start menu - so it could never have
-          # caught this. Doing the same two taps here, in the one
-          # environment this project already fully controls and logs,
-          # means every push answers the "does it still freeze" question
-          # itself instead of waiting on a manual Appetize pass.
-          #
-          # idb's own accessibility-tree dump (`ui describe-all`) is known
-          # broken on iOS 26.x simulators as of this writing - it reports
-          # only the root application node back. Single-point hit-testing
-          # (`ui describe-point`) is reported to still work, so element
-          # lookup below is a plain vertical scan at a fixed x: probe a
-          # column of points down the screen and tap the first one whose
-          # accessibility label matches. Slower than reading one
-          # accessibility tree, but it doesn't depend on the part that's
-          # broken.
-          mkdir -p simulator-screenshots
-          xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/01-start-menu.png || true
-
-          idb list-targets || echo "::warning::idb list-targets failed - idb may not see this simulator"
-
-          # Note on argument order: --udid belongs to each subcommand, not to
-          # idb itself. `idb --udid X ui tap ...` is rejected outright (idb
-          # reads the UDID as the command name); `idb ui tap --udid X ...`
-          # is the form it accepts.
-
-          # tap_label LABEL X Y_START Y_END Y_STEP - scans (X, y) for y in
-          # [Y_START, Y_END] stepping by Y_STEP, taps the first point whose
-          # accessibility label is EXACTLY LABEL, records where in FOUND_Y,
-          # and fails if none matched.
-          #
-          # Exact and case-sensitive on purpose. A loose "contains play"
-          # match hits the wrong things first: the start menu's "Currently
-          # playing: ..." caption sits above the PLAY button, and RulesPage
-          # opens with "How to Play" and "...hit Play to start." A scan that
-          # taps those instead of the buttons does nothing, and the run can
-          # still come out green without the second Play ever being pressed.
-          # Both buttons' text is the literal "PLAY", so matching the quoted
-          # JSON value "PLAY" picks out the buttons and nothing else.
-          FOUND_Y=""
-          tap_label() {
-            local label="$1" x="$2" y_start="$3" y_end="$4" y_step="$5"
-            local y hit
-            FOUND_Y=""
-            for y in $(seq "$y_start" "$y_step" "$y_end"); do
-              hit=$(idb ui describe-point --udid "$DEVICE_ID" "$x" "$y" 2>&1) || true
-              if echo "$hit" | grep -q "\"$label\""; then
-                echo "Found '$label' at ($x, $y): $hit"
-                FOUND_Y="$y"
-                idb ui tap --udid "$DEVICE_ID" "$x" "$y" || true
-                return 0
-              fi
-            done
-            echo "Never found a point labelled '$label' scanning x=$x, y=$y_start..$y_end"
-            echo "Last probe's raw output (x=$x, y=$y_end): $hit"
-            return 1
-          }
-
-          AUTOMATION_OK=1
-
-          # Is idb actually answering? The first run of this step scanned 38
-          # points, matched none, and threw every probe's output away, so
-          # there was no telling "idb can't talk to the simulator" apart
-          # from "the button isn't where we looked." Ask once, print the
-          # raw answer, and stop here if it's an error rather than an
-          # element - nothing below means anything if this fails.
-          echo "--- idb sanity check: what's at the middle of the screen? ---"
-          if PROBE=$(idb ui describe-point --udid "$DEVICE_ID" 196 400 2>&1); then
-            echo "describe-point OK: $PROBE"
-          else
-            echo "::error::idb ui describe-point itself failed - idb can't read this simulator's UI, so every scan below would come up empty. Output: $PROBE"
-            # Stop here instead of running three scans that can only fail
-            # the same way and bury this message under their output.
-            kill "$LOG_PID" "$APP_PID" 2>/dev/null || true
-            exit 1
-          fi
-
-          # A fresh simulator has never claimed the daily reward, so the
-          # start menu opens CheckInPage over itself automatically about a
-          # quarter-second after it appears (GameMenuPage.OnAppearing). That
-          # popup covers PLAY completely - a scan for PLAY underneath it
-          # can't succeed. Close it first if it's there. It has its own
-          # full-width Close button at the bottom of a ScrollView, so scroll
-          # that into view first (if the popup isn't up, the swipe scrolls
-          # the start menu instead, which is undone below). Not finding
-          # Close just means there was no popup, which isn't a failure.
-          echo "--- Dismissing the daily-reward popup, if it opened ---"
-          idb ui swipe --udid "$DEVICE_ID" 196 700 196 100 || true
-          sleep 1
-          if tap_label "Close" 196 80 820 20; then
-            sleep 2
-          else
-            echo "No daily-reward Close button found - assuming no popup."
-          fi
-          # If there was no popup, the swipe above scrolled the start menu
-          # itself, which could leave PLAY above the visible area. Scroll
-          # back to the top either way.
-          idb ui swipe --udid "$DEVICE_ID" 196 150 196 750 || true
-          sleep 1
-          xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/01b-after-popup-dismiss.png || true
-
-          echo "--- Start menu: looking for PLAY ---"
-          if tap_label "PLAY" 196 80 820 20; then
-            sleep 3
-            xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/02-after-start-menu-play.png || true
-
-            # The start menu's PLAY should be gone now, covered by RulesPage.
-            # If the same point still reports PLAY, the tap didn't navigate,
-            # and nothing after this would be testing what it claims to.
-            if idb ui describe-point --udid "$DEVICE_ID" 196 "$FOUND_Y" 2>&1 | grep -q '"PLAY"'; then
-              echo "::error::Still on the start menu after tapping PLAY - the tap didn't open the mode picker."
-              AUTOMATION_OK=0
-            fi
-
-            # RulesPage's rule text can be tall enough to push its own Play
-            # button below the fold, unlike the start menu's fixed short
-            # button list - scroll it fully into view first. Over-scrolling
-            # just settles at the bottom of the ScrollView, so there's no
-            # need to know the exact content height to do this safely.
-            idb ui swipe --udid "$DEVICE_ID" 196 700 196 100 || true
-            idb ui swipe --udid "$DEVICE_ID" 196 700 196 100 || true
-            sleep 1
-            xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/03-rules-scrolled.png || true
-
-            echo "--- Rules page: looking for PLAY ---"
-            # RulesPage's Play button shares its row with a narrower Close
-            # button to its right (Grid ColumnDefinitions="*,Auto"), so it
-            # isn't centered the way the start menu's full-width button is
-            # - x=100 stays safely inside Play's column either way.
-            if tap_label "PLAY" 100 80 820 20; then
-              sleep 5
-              xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/04-after-rules-play.png || true
-
-              # A real hang leaves the process running but unresponsive to
-              # hit-testing, unlike a clean transition or a crash - so this
-              # confirms the UI is still answering at all, not just that
-              # the app didn't outright die.
-              # Two separate questions. Does the UI answer at all? A hung
-              # main thread can't answer a hit-test, so a timeout here is the
-              # freeze. And if it answers, is Rules' PLAY gone from the point
-              # we tapped? If it's still there, the game never opened - a
-              # quiet failure that "the app still responds" alone would miss.
-              echo "--- Checking the game actually opened after the second Play ---"
-              RULES_Y="$FOUND_Y"
-              if AFTER=$(timeout 15 idb ui describe-point --udid "$DEVICE_ID" 100 "$RULES_Y" 2>&1); then
-                echo "Hit-test after second Play: $AFTER"
-                if echo "$AFTER" | grep -q '"PLAY"'; then
-                  echo "::error::UI is responsive but still on the mode picker - Play didn't start the game."
-                  AUTOMATION_OK=0
-                else
-                  echo "Mode picker is gone and the UI responds - the game opened, no freeze."
-                fi
-              else
-                echo "::error::UI did not respond within 15s after the second Play - this is the freeze."
-                AUTOMATION_OK=0
-              fi
-            else
-              echo "::error::Could not find Play on the Rules page - see 03-rules-scrolled.png"
-              AUTOMATION_OK=0
-            fi
-          else
-            echo "::error::Could not find Play on the start menu - see 01-start-menu.png"
-            AUTOMATION_OK=0
-          fi
-
-          xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/05-final-state.png || true
-
-          kill "$LOG_PID" "$APP_PID" 2>/dev/null || true
-
-          # Fail the step (red X, easy to spot in the Actions run) exactly
-          # when the tap-through didn't complete cleanly - a missing button
-          # or an unresponsive UI. Screenshots and logs are already written
-          # above and the later upload steps run regardless (if: always()),
-          # so failing here loses no diagnostic evidence.
-          if [ "$AUTOMATION_OK" -ne 1 ]; then
-            echo "::error::Automated Play tap-through did not complete cleanly - see the screenshots and logs artifacts."
-            exit 1
-          fi
-
-      - name: Screenshot the running app (post-kill sanity check)
-        if: always()
-        run: |
-          mkdir -p simulator-screenshots
-          xcrun simctl io "$device_id" screenshot simulator-screenshots/06-post-kill.png || true
-
-      - name: Upload simulator screenshots
+      - name: Upload smoke test results
+        # Per build: a screenshot at every stage, run.mp4 (a video of the
+        # whole run), the app's os_log and stdout, any crash reports, and
+        # summary.md.
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BlackjackApp-iOS-Simulator-Screenshot
-          path: simulator-screenshots/
-          retention-days: 14
-
-      - name: Upload the simulator log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: BlackjackApp-iOS-Simulator-Log
-          path: simulator-logs/
+          name: BlackjackApp-iOS-Smoke-Test
+          path: simulator-results/
           retention-days: 14
 
       - name: Shut down the simulator
         if: always()
-        run: xcrun simctl shutdown "$device_id" || true
+        run: xcrun simctl shutdown "$DEVICE_ID" || true
 
 # --- Once you have an Apple Developer Program account ($99/year) ---
 # A real device build (or a TestFlight upload) needs code signing, which
