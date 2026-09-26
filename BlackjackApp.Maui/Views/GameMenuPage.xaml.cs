@@ -273,7 +273,29 @@ public partial class GameMenuPage : ContentPage
         _currentVariant = variant;
         RefreshVariantSummary();
 
-        await Navigation.PopModalAsync(); // close RulesPage, back to the start menu
+        // Closing RulesPage WITHOUT animation, and that is the whole point.
+        //
+        // This is the only place in the app that dismisses one modal and
+        // presents another back to back, and it is also the one thing you do
+        // to start a game - which is why the table could hang on Play while
+        // Load Game, which pushes MainPage with nothing to dismiss first,
+        // worked. An animated dismissal is still in flight when the next
+        // present is issued, and MAUI is known to blank or hang when modal
+        // operations are stacked up before the platform transition finishes
+        // (dotnet/maui#32310). iOS is the strict one here: UIKit will not
+        // present on a controller that is mid-dismiss.
+        //
+        // An unanimated pop has no transition to collide with. The yields are
+        // belt and braces - one turn of the loop each, so the dismissal is
+        // fully retired before the present goes out.
+        //
+        // This file already learned this lesson once: see ExitToMenu, where
+        // back-to-back modal pops "outrun each other" and were replaced by
+        // resetting the window outright.
+        await Navigation.PopModalAsync(animated: false);
+        await Task.Yield();
+        await Task.Yield();
+
         await Navigation.PushModalAsync(new MainPage(variant, _deckCount, _handCount));
     }
 
