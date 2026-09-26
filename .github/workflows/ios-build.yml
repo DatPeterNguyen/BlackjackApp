@@ -271,6 +271,11 @@ jobs:
 
           idb list-targets || echo "::warning::idb list-targets failed - idb may not see this simulator"
 
+          # Note on argument order: --udid belongs to each subcommand, not to
+          # idb itself. `idb --udid X ui tap ...` is rejected outright (idb
+          # reads the UDID as the command name); `idb ui tap --udid X ...`
+          # is the form it accepts.
+
           # tap_label LABEL X Y_START Y_END Y_STEP - scans (X, y) for y in
           # [Y_START, Y_END] stepping by Y_STEP, taps the first point whose
           # accessibility label is EXACTLY LABEL, records where in FOUND_Y,
@@ -290,11 +295,11 @@ jobs:
             local y hit
             FOUND_Y=""
             for y in $(seq "$y_start" "$y_step" "$y_end"); do
-              hit=$(idb --udid "$DEVICE_ID" ui describe-point "$x" "$y" 2>&1) || true
+              hit=$(idb ui describe-point --udid "$DEVICE_ID" "$x" "$y" 2>&1) || true
               if echo "$hit" | grep -q "\"$label\""; then
                 echo "Found '$label' at ($x, $y): $hit"
                 FOUND_Y="$y"
-                idb --udid "$DEVICE_ID" ui tap "$x" "$y" || true
+                idb ui tap --udid "$DEVICE_ID" "$x" "$y" || true
                 return 0
               fi
             done
@@ -312,11 +317,14 @@ jobs:
           # raw answer, and stop here if it's an error rather than an
           # element - nothing below means anything if this fails.
           echo "--- idb sanity check: what's at the middle of the screen? ---"
-          if PROBE=$(idb --udid "$DEVICE_ID" ui describe-point 196 400 2>&1); then
+          if PROBE=$(idb ui describe-point --udid "$DEVICE_ID" 196 400 2>&1); then
             echo "describe-point OK: $PROBE"
           else
             echo "::error::idb ui describe-point itself failed - idb can't read this simulator's UI, so every scan below would come up empty. Output: $PROBE"
-            AUTOMATION_OK=0
+            # Stop here instead of running three scans that can only fail
+            # the same way and bury this message under their output.
+            kill "$LOG_PID" "$APP_PID" 2>/dev/null || true
+            exit 1
           fi
 
           # A fresh simulator has never claimed the daily reward, so the
@@ -329,7 +337,7 @@ jobs:
           # the start menu instead, which is undone below). Not finding
           # Close just means there was no popup, which isn't a failure.
           echo "--- Dismissing the daily-reward popup, if it opened ---"
-          idb --udid "$DEVICE_ID" ui swipe 196 700 196 100 || true
+          idb ui swipe --udid "$DEVICE_ID" 196 700 196 100 || true
           sleep 1
           if tap_label "Close" 196 80 820 20; then
             sleep 2
@@ -339,7 +347,7 @@ jobs:
           # If there was no popup, the swipe above scrolled the start menu
           # itself, which could leave PLAY above the visible area. Scroll
           # back to the top either way.
-          idb --udid "$DEVICE_ID" ui swipe 196 150 196 750 || true
+          idb ui swipe --udid "$DEVICE_ID" 196 150 196 750 || true
           sleep 1
           xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/01b-after-popup-dismiss.png || true
 
@@ -351,7 +359,7 @@ jobs:
             # The start menu's PLAY should be gone now, covered by RulesPage.
             # If the same point still reports PLAY, the tap didn't navigate,
             # and nothing after this would be testing what it claims to.
-            if idb --udid "$DEVICE_ID" ui describe-point 196 "$FOUND_Y" 2>&1 | grep -q '"PLAY"'; then
+            if idb ui describe-point --udid "$DEVICE_ID" 196 "$FOUND_Y" 2>&1 | grep -q '"PLAY"'; then
               echo "::error::Still on the start menu after tapping PLAY - the tap didn't open the mode picker."
               AUTOMATION_OK=0
             fi
@@ -361,8 +369,8 @@ jobs:
             # button list - scroll it fully into view first. Over-scrolling
             # just settles at the bottom of the ScrollView, so there's no
             # need to know the exact content height to do this safely.
-            idb --udid "$DEVICE_ID" ui swipe 196 700 196 100 || true
-            idb --udid "$DEVICE_ID" ui swipe 196 700 196 100 || true
+            idb ui swipe --udid "$DEVICE_ID" 196 700 196 100 || true
+            idb ui swipe --udid "$DEVICE_ID" 196 700 196 100 || true
             sleep 1
             xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/03-rules-scrolled.png || true
 
@@ -386,7 +394,7 @@ jobs:
               # quiet failure that "the app still responds" alone would miss.
               echo "--- Checking the game actually opened after the second Play ---"
               RULES_Y="$FOUND_Y"
-              if AFTER=$(timeout 15 idb --udid "$DEVICE_ID" ui describe-point 100 "$RULES_Y" 2>&1); then
+              if AFTER=$(timeout 15 idb ui describe-point --udid "$DEVICE_ID" 100 "$RULES_Y" 2>&1); then
                 echo "Hit-test after second Play: $AFTER"
                 if echo "$AFTER" | grep -q '"PLAY"'; then
                   echo "::error::UI is responsive but still on the mode picker - Play didn't start the game."
