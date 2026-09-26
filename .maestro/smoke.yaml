@@ -1,0 +1,95 @@
+# The game loop a player actually goes through, start to finish. Run by
+# .github/workflows/ios-build.yml against every iOS build (see
+# .github/scripts/smoke-test-ios.sh). Try it locally on a Mac with the app
+# installed in a booted simulator:  maestro test .maestro/smoke.yaml
+#
+# Text matches a button's text or its accessibility label (the image-only
+# buttons - Stand, the chips, the table menu - get theirs from
+# SemanticProperties.Description in MainPage.xaml). A match has to be the
+# whole text, so "PLAY" never matches "Currently playing: ...".
+appId: com.companyname.blackjackapp.maui
+---
+# Fresh data: starting balance, no saved round, daily reward waiting.
+- launchApp:
+    clearState: true
+
+# A first launch opens the daily reward over the start menu.
+- runFlow:
+    when:
+      visible: "CLAIM"
+    commands:
+      - takeScreenshot: 00-daily-reward
+      - scrollUntilVisible:
+          element: "Close"
+          direction: DOWN
+      - tapOn: "Close"
+
+- extendedWaitUntil:
+    visible: "PLAY"
+    timeout: 20000
+- takeScreenshot: 01-start-menu
+
+# Play -> mode picker.
+- tapOn: "PLAY"
+- extendedWaitUntil:
+    visible: "How to Play"
+    timeout: 15000
+- takeScreenshot: 02-mode-picker
+
+# Mode picker's own Play, under the three rule sections -> the table.
+# This is the step reported to freeze.
+- scrollUntilVisible:
+    element: "PLAY"
+    direction: DOWN
+- tapOn: "PLAY"
+- extendedWaitUntil:
+    visible: "DEAL"
+    timeout: 30000
+- takeScreenshot: 03-table
+
+# One full round: bet everything, deal, answer whatever the table asks until
+# DEAL comes back (insurance if the dealer shows an Ace, Stand on the hand,
+# the out-of-chips offer if the round lost it all). A natural blackjack
+# ends the round with nothing to answer.
+- tapOn: "All In"
+- tapOn: "DEAL"
+- extendedWaitUntil:
+    notVisible: "DEAL"
+    timeout: 15000
+- takeScreenshot: 04-dealt
+- repeat:
+    times: 8
+    while:
+      notVisible: "DEAL"
+    commands:
+      - runFlow:
+          when:
+            visible: "NO INSURANCE"
+          commands:
+            - tapOn: "NO INSURANCE"
+      - runFlow:
+          when:
+            visible: "Stand"
+          commands:
+            - tapOn: "Stand"
+      - runFlow:
+          when:
+            visible: "No Thanks"
+          commands:
+            - tapOn: "No Thanks"
+- extendedWaitUntil:
+    visible: "DEAL"
+    timeout: 30000
+- takeScreenshot: 05-round-over
+
+# Leave the game: table menu -> Exit to Menu -> confirm.
+- tapOn: "Table menu"
+- tapOn: "Exit to Menu"
+# The confirmation alert has its own "Exit to Menu", beside Cancel.
+- tapOn:
+    text: "Exit to Menu"
+    rightOf: "Cancel"
+- extendedWaitUntil:
+    visible: "PLAY"
+    timeout: 20000
+- takeScreenshot: 06-back-at-start

@@ -11,7 +11,9 @@ public static class MauiProgram
 		var builder = MauiApp.CreateBuilder();
 		builder
 			.UseMauiApp<App>()
+#if !NO_ADS
 			.UseMauiMTAdmob()
+#endif
 			.ConfigureFonts(fonts =>
 			{
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -40,7 +42,15 @@ public static class MauiProgram
 		// working, AdMobRewardedAdService simply reports that no ad is
 		// ready, the offer is never made, and the game plays exactly as it
 		// did before ads existed.
+		//
+		// NO_ADS (build with -p:Ads=false - see the csproj) leaves the SDK
+		// untouched entirely, to test whether it's what freezes the table on
+		// iOS.
+#if NO_ADS
+		AppServices.Ads = new NoOpAdService();
+#else
 		AppServices.Ads = new AdMobRewardedAdService();
+#endif
 
 		// The online leaderboard. Inert until LeaderboardConfig has a project
 		// URL and anon key in it, at which point this starts serving the real

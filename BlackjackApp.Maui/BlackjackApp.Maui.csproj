@@ -107,6 +107,18 @@
 		<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
 	</PropertyGroup>
 
+	<!--
+		Ads off: build with -p:Ads=false and the app never touches the AdMob
+		SDK (MauiProgram skips UseMauiMTAdmob and uses NoOpAdService, so the
+		bust-out rescue simply isn't offered). The iOS workflow builds one of
+		these next to the normal Release build, so the two can be compared:
+		the table starts loading a rewarded ad the moment it appears
+		(MainPage.OnAppearing), which is exactly when the iOS freeze shows up.
+	-->
+	<PropertyGroup Condition="'$(Ads)' == 'false'">
+		<DefineConstants>$(DefineConstants);NO_ADS</DefineConstants>
+	</PropertyGroup>
+
 	<PropertyGroup>
 
 		<!-- Set directly rather than relying on Rider/MSBuild auto-detecting

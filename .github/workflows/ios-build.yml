@@ -1,11 +1,33 @@
-# Builds the iOS target on a macOS GitHub-hosted runner, since MAUI iOS
-# builds require Xcode and can't happen on the Windows dev machine this
-# project otherwise lives on. No Apple Developer account yet, so this
-# builds unsigned, for the iOS Simulator only - not something you can
-# install on a physical device or submit to TestFlight/the App Store.
-# Once you enroll in the Apple Developer Program, this can be extended
-# with a signing certificate/provisioning profile to produce a real
-# device build (see the comment at the bottom of this file).
+# iOS: build the app for the iOS Simulator, package it for Appetize, and
+# play through it automatically.
+#
+# Three jobs, each depending on the one before:
+#
+#   1. unit-tests   Core game-logic tests, on Linux (cheap, fast). Nothing
+#                   else runs if the rules themselves are broken.
+#   2. build        Three simulator builds on a Mac:
+#                     debug           most logging, slowest
+#                     release         what a player would actually run
+#                     release-no-ads  Release with the AdMob SDK never
+#                                     touched (see the Ads property in the
+#                                     csproj) - if Play works here and
+#                                     freezes in "release", the ad SDK is
+#                                     the cause
+#                   Each is uploaded as its own artifact, zipped the way
+#                   Appetize wants: download it, unzip once, upload the
+#                   BlackjackApp-ios-simulator-<name>.zip inside to Appetize.
+#                   Build warnings and full MSBuild logs are uploaded too.
+#   3. smoke-test   Installs each build on a simulator and runs
+#                   .maestro/smoke.yaml: start menu -> Play -> mode picker ->
+#                   Play -> table -> a full round -> Exit to Menu. Allowed to
+#                   fail without failing the run, so the builds above are
+#                   always usable even while the automation is being
+#                   worked on - its results are in the run's summary.
+#
+# Everything is simulator-only and unsigned: no Apple Developer account is
+# needed, and nothing here can go on a physical iPhone or the App Store
+# (see the note at the bottom for what that takes).
+
 name: iOS Build
 
 on:
@@ -14,54 +36,85 @@ on:
     paths:
       - 'BlackjackApp.Maui/**'
       - 'BlackjackApp.core/**'
+      - 'BlackjackApp.Tests/**'
+      - '.maestro/**'
+      - '.github/scripts/*ios*'
       - '.github/workflows/ios-build.yml'
-      - '.github/scripts/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'BlackjackApp.Maui/**'
       - 'BlackjackApp.core/**'
+      - 'BlackjackApp.Tests/**'
+      - '.maestro/**'
+      - '.github/scripts/*ios*'
       - '.github/workflows/ios-build.yml'
-      - '.github/scripts/**'
   workflow_dispatch: {}
 
-jobs:
-  build-ios-simulator:
-    # macOS runners are the only GitHub-hosted option with Xcode, and cost
-    # 10x the CI minutes of a Linux runner - the path filters above keep
-    # this from firing on every unrelated commit.
-    #
-    # This project's .NET for iOS workload (26.5.10318) needs EXACTLY
-    # Xcode 26.6 - not "at least", older or newer both fail the same way,
-    # and Microsoft doesn't provide an MSBuild property to relax that
-    # check (see https://aka.ms/xcode-requirement). xcode-27 only bundles
-    # Xcode 27.0 beta, which is too new; macos-26 bundles Xcode 26.6
-    # directly (as its default, in fact) alongside several older ones, so
-    # that's the one to use. If a future dotnet workload update bumps the
-    # required Xcode version, the "Select Xcode 26.6" step below is the
-    # one to update alongside it.
-    runs-on: macos-26
+# A newer push to the same branch cancels the run still going for the old
+# one - macOS runner minutes are the expensive kind.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  BUNDLE_ID: com.companyname.blackjackapp.maui
+  # This project's .NET for iOS workload needs EXACTLY this Xcode - older and
+  # newer both fail the build (https://aka.ms/xcode-requirement). If a
+  # workload update moves the requirement, this is the line to change.
+  XCODE_APP: /Applications/Xcode_26.6.app
+
+jobs:
+  unit-tests:
+    name: Core unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 26.6
-        # Exact version, not "latest" - see the runs-on comment above for
-        # why. Fails loudly and lists what IS on the runner if 26.6 isn't
-        # there, rather than silently falling back to some other version
-        # that would just fail later with a more confusing MSBuild error.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run tests
+        run: >
+          dotnet test BlackjackApp.Tests/BlackjackApp.Tests.csproj -c Release
+          --logger "trx;LogFileName=unit-tests.trx"
+          --results-directory test-results
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: test-results/
+          retention-days: 7
+
+  build:
+    name: Build iOS Simulator apps
+    needs: unit-tests
+    # macos-26 is the image that ships Xcode 26.6.
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
         run: |
-          REQUIRED_XCODE="/Applications/Xcode_26.6.app"
-          if [ ! -d "$REQUIRED_XCODE" ]; then
-            echo "::error::$REQUIRED_XCODE not found on this runner. Available Xcode installs:" >&2
-            ls -d /Applications/Xcode*.app 2>/dev/null >&2
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::$XCODE_APP isn't on this runner. Xcodes that are:"
+            ls -d /Applications/Xcode*.app
             exit 1
           fi
-          sudo xcode-select -s "$REQUIRED_XCODE/Contents/Developer"
-          xcodebuild -version
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
@@ -70,180 +123,157 @@ jobs:
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
+          restore-keys: ${{ runner.os }}-nuget-
 
-      - name: Restore MAUI workloads
+      - name: Install the MAUI workload
         run: dotnet workload restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
 
-      - name: Restore NuGet dependencies
-        # dotnet restore has no -f/--framework shorthand the way build/test
-        # do - passing one gets parsed as a second project path instead
-        # ("Only one project can be specified"). Restoring without it just
-        # restores every applicable TargetFramework for this OS (android,
-        # ios, maccatalyst on a Mac runner), which is what the already-run
-        # workload restore installed workloads for anyway.
+      - name: Restore packages
         run: dotnet restore BlackjackApp.Maui/BlackjackApp.Maui.csproj
 
-      - name: Report the resolved MAUI version
-        # Which MAUI this runner actually builds against is not visible in the
-        # csproj: it references $(MauiVersion), which comes from whatever
-        # workload the SDK selected by dotnet-version above installed. More
-        # than one iOS layout and animation bug this app has run into is
-        # version-specific - dotnet/maui#33934 among them - so print it where
-        # the build log will show it, rather than inferring it from a developer
-        # machine's obj/ folder, which can be several versions behind.
+      - name: Record the toolchain
+        # The MAUI version here comes from whichever workload the SDK picked,
+        # not from the csproj, and it isn't necessarily the one on the dev
+        # machine - several of the iOS bugs this app has hit are fixed or
+        # introduced in specific MAUI releases. So it goes in the summary.
         run: |
-          echo "SDK: $(dotnet --version)"
-          grep -o '"Microsoft.Maui.Controls/[0-9][^"]*"' \
-            BlackjackApp.Maui/obj/project.assets.json | sort -u || true
+          MAUI=$( (grep -o '"Microsoft.Maui.Controls/[0-9][^"]*"' BlackjackApp.Maui/obj/project.assets.json || true) \
+                 | head -1 | tr -d '"' | cut -d/ -f2)
+          ADMOB=$( (grep -o '"Plugin.MauiMTAdmob/[0-9][^"]*"' BlackjackApp.Maui/obj/project.assets.json || true) \
+                 | head -1 | tr -d '"' | cut -d/ -f2)
+          {
+            echo "### Toolchain"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Xcode | $(xcodebuild -version | head -1 | cut -d' ' -f2) |"
+            echo "| .NET SDK | $(dotnet --version) |"
+            echo "| MAUI (Microsoft.Maui.Controls) | ${MAUI:-unknown} |"
+            echo "| Plugin.MauiMTAdmob | ${ADMOB:-unknown} |"
+            echo
+            echo "### Builds"
+            echo
+            echo "| Build | Configuration | Architectures | Min iOS | Size | Warnings | Most common warnings |"
+            echo "|---|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          dotnet workload list
 
-      - name: Run BlackjackApp.core unit tests
-        # Cheap correctness gate before spending macOS-runner minutes on the
-        # actual iOS build - fails fast if a change broke game logic.
-        run: dotnet test BlackjackApp.Tests/BlackjackApp.Tests.csproj -c Release
+      - name: Build debug
+        run: bash .github/scripts/build-ios-sim.sh Debug debug
 
-      - name: Build for iOS Simulator (Debug)
-        run: >
-          dotnet build BlackjackApp.Maui/BlackjackApp.Maui.csproj
-          -f net10.0-ios
-          -c Debug
-          -p:RuntimeIdentifier=iossimulator-arm64
-          -p:BuildIpa=false
+      - name: Build release
+        run: bash .github/scripts/build-ios-sim.sh Release release
 
-      - name: Build for iOS Simulator (Release)
-        # The Debug build above is for reading logs from: it carries debug
-        # metadata, runs managed code unoptimised, and is the only
-        # configuration where the layout trace in OnSizeAllocated compiles in.
-        # It is NOT the configuration to judge performance by - a MAUI iOS
-        # Debug build is materially slower than Release at exactly the kind of
-        # work dealing a hand does, and slower still when a hosted simulator
-        # service is streaming it over a network. So both come out of this
-        # workflow: install Release to decide whether the app is genuinely
-        # wrong, install Debug when you need the log to say why.
-        run: >
-          dotnet build BlackjackApp.Maui/BlackjackApp.Maui.csproj
-          -f net10.0-ios
-          -c Release
-          -p:RuntimeIdentifier=iossimulator-arm64
-          -p:BuildIpa=false
+      - name: Build release-no-ads
+        # --no-incremental: this shares its output folder with the release
+        # build above, and a switched-off define must not be able to ride
+        # along on anything left over from it.
+        run: bash .github/scripts/build-ios-sim.sh Release release-no-ads -p:Ads=false --no-incremental
 
-      - name: Locate the Release .app bundle
-        id: find-app-release
-        run: |
-          APP_PATH=$(find BlackjackApp.Maui/bin/Release/net10.0-ios -maxdepth 2 -name "*.app" -type d | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "No Release .app bundle found - build likely failed earlier." >&2
-            exit 1
-          fi
-          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
-
-      - name: Upload the Release .app bundle
+      - name: Upload debug app
         uses: actions/upload-artifact@v4
         with:
-          name: BlackjackApp-iOS-Simulator-Release
-          path: ${{ steps.find-app-release.outputs.app_path }}
+          name: BlackjackApp-iOS-Simulator-debug
+          path: dist/BlackjackApp-ios-simulator-debug.zip
           retention-days: 14
 
-      - name: Locate the Debug .app bundle
-        id: find-app
-        run: |
-          APP_PATH=$(find BlackjackApp.Maui/bin/Debug/net10.0-ios -maxdepth 2 -name "*.app" -type d | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "No .app bundle found - build likely failed earlier." >&2
-            exit 1
-          fi
-          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
-
-      - name: Upload the Debug .app bundle
+      - name: Upload release app
         uses: actions/upload-artifact@v4
         with:
-          name: BlackjackApp-iOS-Simulator-Debug
-          path: ${{ steps.find-app.outputs.app_path }}
+          name: BlackjackApp-iOS-Simulator-release
+          path: dist/BlackjackApp-ios-simulator-release.zip
           retention-days: 14
 
-      - name: Install idb (iOS Simulator UI automation)
-        # idb (facebook/idb) drives the simulator the way a person would -
-        # tapping specific points and hit-testing what's there - which is
-        # what turns the boot-and-screenshot step below into an actual
-        # regression test for the Play freeze instead of a boot check.
-        #
-        # Recent Homebrew versions refuse to load a formula from a
-        # third-party tap (like this one) until it's explicitly trusted -
-        # `brew install facebook/fb/idb` alone taps it automatically, then
-        # fails right after with "Refusing to load formula ... from
-        # untrusted tap". Tap it first so there's something to trust, then
-        # trust it. The whole-tap form is tried first; the error message's
-        # own suggested per-formula form (naming the underlying formula,
-        # idb-cli, not the idb alias) is the fallback, since a per-formula
-        # `--formula` trust has been reported broken in some Homebrew
-        # versions.
-        run: |
-          brew tap facebook/fb
-          brew trust facebook/fb || brew trust --formula facebook/fb/idb-cli || \
-            echo "::warning::brew trust failed via both known forms - the install below may still fail"
-          brew install facebook/fb/idb
+      - name: Upload release-no-ads app
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackjackApp-iOS-Simulator-release-no-ads
+          path: dist/BlackjackApp-ios-simulator-release-no-ads.zip
+          retention-days: 14
 
-      - name: Boot a simulator
-        id: boot
-        # One simulator for both smoke-test passes below. Each pass reinstalls
-        # the app, which also wipes its saved data, so both start from a true
-        # first launch.
-        run: |
-          RUNTIME=$(xcrun simctl list runtimes ios --json | python3 -c "import json,sys; runtimes=json.load(sys.stdin)['runtimes']; print(runtimes[-1]['identifier'])")
-          echo "Using runtime: $RUNTIME"
-          DEVICE_ID=$(xcrun simctl create "CI-iPhone" "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$RUNTIME")
-          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
-          echo "BUNDLE_ID=com.companyname.blackjackapp.maui" >> "$GITHUB_ENV"
-          xcrun simctl boot "$DEVICE_ID"
-          xcrun simctl bootstatus "$DEVICE_ID" -b
-
-      - name: Smoke test the Debug build
-        # What this drives the app through, and what each stage checks, is
-        # listed at the top of .github/scripts/ios-smoke-test.sh. Results show
-        # up as a table on the run's summary page. Debug is the build whose
-        # logs say the most: its [table] trace only compiles in here.
-        timeout-minutes: 25
-        run: bash .github/scripts/ios-smoke-test.sh "${{ steps.find-app.outputs.app_path }}" debug
-
-      - name: Smoke test the Release build
-        # Release as well, because it's the build closest to what a player
-        # runs: optimised and trimmed, so a freeze that depends on timing, or
-        # on code the trimmer removed, can show up in one build and not the
-        # other. Runs even when the Debug pass failed, so one run answers
-        # both.
-        if: always() && steps.boot.outcome == 'success'
-        timeout-minutes: 25
-        run: bash .github/scripts/ios-smoke-test.sh "${{ steps.find-app-release.outputs.app_path }}" release
-
-      - name: Upload smoke test results
-        # Per build: a screenshot at every stage, run.mp4 (a video of the
-        # whole run), the app's os_log and stdout, any crash reports, and
-        # summary.md.
+      - name: Upload build logs
+        # Warnings for every build, plus the full binary logs - open a
+        # .binlog in MSBuild Structured Log Viewer to see exactly what the
+        # build did and why.
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BlackjackApp-iOS-Smoke-Test
-          path: simulator-results/
+          name: BlackjackApp-iOS-Build-Logs
+          path: logs/
+          retention-days: 14
+
+  smoke-test:
+    name: Smoke test in the simulator
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 60
+    # The builds are the deliverable; this job failing shows as a red job
+    # and a table in the summary, but doesn't fail the run.
+    continue-on-error: true
+    env:
+      # Maestro's iOS driver can take a while to come up on a cold runner.
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: 180000
+      MAESTRO_CLI_NO_ANALYTICS: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download the builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: BlackjackApp-iOS-Simulator-*
+          path: apps
+          merge-multiple: true
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot a simulator
+        # Exactly one booted simulator, so Maestro has no choice to make
+        # about which device to drive.
+        run: |
+          RUNTIME=$(xcrun simctl list runtimes ios --json \
+            | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('isAvailable')]; print(r[-1]['identifier'])")
+          echo "Runtime: $RUNTIME"
+          DEVICE_ID=$(xcrun simctl create "Smoke-iPhone" "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$RUNTIME")
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b > /dev/null
+          maestro --version
+
+      - name: Run the smoke test on each build
+        run: bash .github/scripts/smoke-test-ios.sh apps
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackjackApp-iOS-Smoke-Test-Results
+          path: smoke-results/
           retention-days: 14
 
       - name: Shut down the simulator
         if: always()
         run: xcrun simctl shutdown "$DEVICE_ID" || true
 
-# --- Once you have an Apple Developer Program account ($99/year) ---
-# A real device build (or a TestFlight upload) needs code signing, which
-# needs secrets this workflow doesn't have yet:
-#   1. Export your Distribution/Development certificate as a .p12 file.
-#   2. Create a provisioning profile for this app's bundle ID in the
-#      Apple Developer portal.
-#   3. Base64-encode both and store them as encrypted GitHub Actions
-#      secrets (Settings -> Secrets and variables -> Actions), along with
-#      the .p12's password.
-#   4. Add steps here to import the certificate into a temporary keychain
-#      and install the provisioning profile before the build step, then
-#      change RuntimeIdentifier to ios-arm64 and set the signing
-#      properties (CodesignKey, CodesignProvision, ArchiveOnBuild=true,
-#      BuildIpa=true) so the build produces a signed .ipa instead.
-# Ask for help wiring this up once enrollment goes through - it's a
-# bigger step than the simulator build above and worth doing carefully.
+# --- Real iPhones, TestFlight and the App Store ---
+# All of those need an Apple Developer Program membership ($99/year) and
+# code signing, which this workflow doesn't have:
+#   1. Create a distribution certificate and an App Store provisioning
+#      profile for a real bundle ID (not com.companyname...) in the Apple
+#      Developer portal.
+#   2. Base64-encode the certificate (.p12) and profile and store them, with
+#      the .p12's password, as GitHub Actions secrets.
+#   3. Add a job that imports them into a temporary keychain, builds with
+#      RuntimeIdentifier=ios-arm64, ArchiveOnBuild=true, BuildIpa=true,
+#      CodesignKey and CodesignProvision, and uploads the .ipa to App Store
+#      Connect with an App Store Connect API key.
