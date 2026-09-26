@@ -819,20 +819,23 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// One line into the device log, prefixed so it can be picked out of the
-    /// noise a simulator produces: filter a log on "[table]" and what is left
-    /// is this table talking.
+    /// One line out of the app, prefixed so it can be picked out of the noise a
+    /// simulator produces: filter on "[table]" and what is left is this table
+    /// talking.
+    ///
+    /// Console, not Debug.WriteLine. That distinction cost a whole build cycle:
+    /// Debug.WriteLine does not reach os_log on iOS, so "simctl spawn ... log
+    /// stream" captured a launch with not one line of this in it, and the
+    /// silence looked like evidence about the app when it was only evidence
+    /// about the logging. Console goes to stdout, which the workflow now
+    /// captures with "simctl launch --console-pty".
     ///
     /// [Conditional] removes the CALL SITES from a Release build rather than
-    /// just the body, so this costs Release nothing and needs no #if at the
-    /// places it is called from. It exists because this page's one real
-    /// failure mode - layout that will not settle - looks identical from the
-    /// outside to a dozen other things, and guessing between them from a
-    /// screenshot cost several rounds of builds.
+    /// just the body, so Release pays nothing and no call site needs an #if.
     /// </summary>
     [System.Diagnostics.Conditional("DEBUG")]
     private static void Trace(string message) =>
-        System.Diagnostics.Debug.WriteLine($"[table] {message}");
+        Console.WriteLine($"[table] {message}");
 
     protected override void OnSizeAllocated(double width, double height)
     {

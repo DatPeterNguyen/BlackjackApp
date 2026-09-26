@@ -181,24 +181,50 @@ jobs:
 
           xcrun simctl install "$DEVICE_ID" "${{ steps.find-app.outputs.app_path }}"
 
-          # Capture what the app writes to the device log as it starts. Without
-          # this, a startup exception or a runaway layout is invisible from
-          # here - the screenshot below only shows that SOMETHING rendered, not
-          # whether the app is quietly throwing behind it. Started before the
-          # launch so nothing early is missed.
+          # Turn on UIKit's OWN layout feedback loop detector before launching.
+          # The last run's log showed UIKit looking this key up and finding
+          # nothing, which means the detector was simply switched off. With a
+          # threshold set, UIKit reports a view whose layout keeps re-entering
+          # rather than leaving us to infer it from a frozen screen - and
+          # crucially it answers that question whether or not the app's own
+          # logging is working.
+          xcrun simctl spawn "$DEVICE_ID" defaults write "$BUNDLE_ID" \
+            UIViewLayoutFeedbackLoopDebuggingThreshold 100 || true
+
           mkdir -p simulator-logs
+
+          # Two logs, because they carry different things. This one is os_log:
+          # UIKit, CoreAnimation, crashes, the feedback-loop detector above.
           xcrun simctl spawn "$DEVICE_ID" log stream --level debug --style compact \
             --predicate 'processImagePath CONTAINS "BlackjackApp"' \
-            > simulator-logs/app-launch.log 2>&1 &
+            > simulator-logs/app-oslog.log 2>&1 &
           LOG_PID=$!
 
-          xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID"
+          # And this one is the app's own stdout, where its [table] trace goes.
+          # The os_log stream does NOT carry it: .NET's Console and Debug output
+          # do not reach os_log on iOS, which is why a previous run captured a
+          # launch with not one line of the app's own logging in it. That
+          # silence looked like evidence about the app; it was only evidence
+          # about the logging.
+          xcrun simctl launch --console-pty "$DEVICE_ID" "$BUNDLE_ID" \
+            > simulator-logs/app-stdout.log 2>&1 &
+          APP_PID=$!
+
+          # --console-pty is the part most likely to misbehave on a headless
+          # runner, and it is not worth losing the run over, so fall back to a
+          # plain launch if the app is not actually up.
+          sleep 5
+          if ! xcrun simctl spawn "$DEVICE_ID" launchctl list 2>/dev/null | grep -q blackjackapp; then
+            echo "::warning::--console-pty did not start the app; falling back to a plain launch (no stdout capture)."
+            kill "$APP_PID" 2>/dev/null || true
+            xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID"
+          fi
 
           # Let the start-menu screen (and its daily-reward popup, if one's
           # due) finish rendering before the screenshot below.
           sleep 8
 
-          kill "$LOG_PID" 2>/dev/null || true
+          kill "$LOG_PID" "$APP_PID" 2>/dev/null || true
 
       - name: Screenshot the running app
         run: |
