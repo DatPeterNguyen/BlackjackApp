@@ -263,7 +263,7 @@ public partial class GameMenuPage : ContentPage
     }
 
     /// <summary>Called when RulesPage's Play button confirms a mode selection (start menu only) - closes Rules and launches a fresh game with that variant.</summary>
-    private async Task StartGameWith(IGameVariant variant)
+    private Task StartGameWith(IGameVariant variant)
     {
         // Committing to the new game now - drop the old save (see the
         // warning in PlayButton_OnClicked) so it doesn't linger as a stale
@@ -273,30 +273,31 @@ public partial class GameMenuPage : ContentPage
         _currentVariant = variant;
         RefreshVariantSummary();
 
-        // Closing RulesPage WITHOUT animation, and that is the whole point.
+        // The previous fix here was PopModalAsync(animated: false) followed
+        // by two Task.Yield()s before PushModalAsync(new MainPage(...)) -
+        // an unanimated pop has no transition of its own, and the yields
+        // were meant to let iOS's dismiss finish retiring before the next
+        // present went out (dotnet/maui#32310: UIKit won't present on a
+        // controller that's still mid-dismiss). That held up fine in CI on
+        // an idle GitHub Actions runner, but the freeze came back on
+        // Appetize's hosted simulator - slower and busier, so the same
+        // fixed number of yields wasn't always enough to cover it. It was
+        // still a race, just a narrower one.
         //
-        // This is the only place in the app that dismisses one modal and
-        // presents another back to back, and it is also the one thing you do
-        // to start a game - which is why the table could hang on Play while
-        // Load Game, which pushes MainPage with nothing to dismiss first,
-        // worked. An animated dismissal is still in flight when the next
-        // present is issued, and MAUI is known to blank or hang when modal
-        // operations are stacked up before the platform transition finishes
-        // (dotnet/maui#32310). iOS is the strict one here: UIKit will not
-        // present on a controller that is mid-dismiss.
-        //
-        // An unanimated pop has no transition to collide with. The yields are
-        // belt and braces - one turn of the loop each, so the dismissal is
-        // fully retired before the present goes out.
-        //
-        // This file already learned this lesson once: see ExitToMenu, where
-        // back-to-back modal pops "outrun each other" and were replaced by
-        // resetting the window outright.
-        await Navigation.PopModalAsync(animated: false);
-        await Task.Yield();
-        await Task.Yield();
+        // This file already had a fix for the same family of problem that
+        // doesn't race anything: ExitToMenuButton_OnClicked below discards
+        // an arbitrarily deep modal stack in one shot by replacing the
+        // window's root Page, rather than popping back through it one
+        // level at a time. Doing the same thing here removes the dismiss
+        // entirely - there's nothing to wait out, because nothing is being
+        // dismissed. The window (and every modal stacked on it, RulesPage
+        // included) just starts pointing at MainPage on the next frame.
+        if (Application.Current?.Windows.Count > 0)
+        {
+            Application.Current.Windows[0].Page = new MainPage(variant, _deckCount, _handCount);
+        }
 
-        await Navigation.PushModalAsync(new MainPage(variant, _deckCount, _handCount));
+        return Task.CompletedTask;
     }
 
     /// <summary>
