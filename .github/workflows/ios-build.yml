@@ -273,14 +273,27 @@ jobs:
 
           # tap_label LABEL X Y_START Y_END Y_STEP - scans (X, y) for y in
           # [Y_START, Y_END] stepping by Y_STEP, taps the first point whose
-          # describe-point hit mentions LABEL, and fails if none did.
+          # accessibility label is EXACTLY LABEL, records where in FOUND_Y,
+          # and fails if none matched.
+          #
+          # Exact and case-sensitive on purpose. A loose "contains play"
+          # match hits the wrong things first: the start menu's "Currently
+          # playing: ..." caption sits above the PLAY button, and RulesPage
+          # opens with "How to Play" and "...hit Play to start." A scan that
+          # taps those instead of the buttons does nothing, and the run can
+          # still come out green without the second Play ever being pressed.
+          # Both buttons' text is the literal "PLAY", so matching the quoted
+          # JSON value "PLAY" picks out the buttons and nothing else.
+          FOUND_Y=""
           tap_label() {
             local label="$1" x="$2" y_start="$3" y_end="$4" y_step="$5"
             local y hit
+            FOUND_Y=""
             for y in $(seq "$y_start" "$y_step" "$y_end"); do
               hit=$(idb --udid "$DEVICE_ID" ui describe-point "$x" "$y" 2>&1) || true
-              if echo "$hit" | grep -qi "$label"; then
+              if echo "$hit" | grep -q "\"$label\""; then
                 echo "Found '$label' at ($x, $y): $hit"
+                FOUND_Y="$y"
                 idb --udid "$DEVICE_ID" ui tap "$x" "$y" || true
                 return 0
               fi
@@ -295,6 +308,14 @@ jobs:
           if tap_label "PLAY" 196 80 820 20; then
             sleep 3
             xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/02-after-start-menu-play.png || true
+
+            # The start menu's PLAY should be gone now, covered by RulesPage.
+            # If the same point still reports PLAY, the tap didn't navigate,
+            # and nothing after this would be testing what it claims to.
+            if idb --udid "$DEVICE_ID" ui describe-point 196 "$FOUND_Y" 2>&1 | grep -q '"PLAY"'; then
+              echo "::error::Still on the start menu after tapping PLAY - the tap didn't open the mode picker."
+              AUTOMATION_OK=0
+            fi
 
             # RulesPage's rule text can be tall enough to push its own Play
             # button below the fold, unlike the start menu's fixed short
@@ -319,9 +340,21 @@ jobs:
               # hit-testing, unlike a clean transition or a crash - so this
               # confirms the UI is still answering at all, not just that
               # the app didn't outright die.
-              echo "--- Checking the UI is still responsive after the second Play ---"
-              if timeout 15 idb --udid "$DEVICE_ID" ui describe-point 196 400; then
-                echo "UI responded - no freeze detected."
+              # Two separate questions. Does the UI answer at all? A hung
+              # main thread can't answer a hit-test, so a timeout here is the
+              # freeze. And if it answers, is Rules' PLAY gone from the point
+              # we tapped? If it's still there, the game never opened - a
+              # quiet failure that "the app still responds" alone would miss.
+              echo "--- Checking the game actually opened after the second Play ---"
+              RULES_Y="$FOUND_Y"
+              if AFTER=$(timeout 15 idb --udid "$DEVICE_ID" ui describe-point 100 "$RULES_Y" 2>&1); then
+                echo "Hit-test after second Play: $AFTER"
+                if echo "$AFTER" | grep -q '"PLAY"'; then
+                  echo "::error::UI is responsive but still on the mode picker - Play didn't start the game."
+                  AUTOMATION_OK=0
+                else
+                  echo "Mode picker is gone and the UI responds - the game opened, no freeze."
+                fi
               else
                 echo "::error::UI did not respond within 15s after the second Play - this is the freeze."
                 AUTOMATION_OK=0
