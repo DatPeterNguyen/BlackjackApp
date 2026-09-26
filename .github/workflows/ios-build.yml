@@ -298,11 +298,50 @@ jobs:
                 return 0
               fi
             done
-            echo "::error::Never found a point labelled '$label' scanning x=$x, y=$y_start..$y_end"
+            echo "Never found a point labelled '$label' scanning x=$x, y=$y_start..$y_end"
+            echo "Last probe's raw output (x=$x, y=$y_end): $hit"
             return 1
           }
 
           AUTOMATION_OK=1
+
+          # Is idb actually answering? The first run of this step scanned 38
+          # points, matched none, and threw every probe's output away, so
+          # there was no telling "idb can't talk to the simulator" apart
+          # from "the button isn't where we looked." Ask once, print the
+          # raw answer, and stop here if it's an error rather than an
+          # element - nothing below means anything if this fails.
+          echo "--- idb sanity check: what's at the middle of the screen? ---"
+          if PROBE=$(idb --udid "$DEVICE_ID" ui describe-point 196 400 2>&1); then
+            echo "describe-point OK: $PROBE"
+          else
+            echo "::error::idb ui describe-point itself failed - idb can't read this simulator's UI, so every scan below would come up empty. Output: $PROBE"
+            AUTOMATION_OK=0
+          fi
+
+          # A fresh simulator has never claimed the daily reward, so the
+          # start menu opens CheckInPage over itself automatically about a
+          # quarter-second after it appears (GameMenuPage.OnAppearing). That
+          # popup covers PLAY completely - a scan for PLAY underneath it
+          # can't succeed. Close it first if it's there. It has its own
+          # full-width Close button at the bottom of a ScrollView, so scroll
+          # that into view first (if the popup isn't up, the swipe scrolls
+          # the start menu instead, which is undone below). Not finding
+          # Close just means there was no popup, which isn't a failure.
+          echo "--- Dismissing the daily-reward popup, if it opened ---"
+          idb --udid "$DEVICE_ID" ui swipe 196 700 196 100 || true
+          sleep 1
+          if tap_label "Close" 196 80 820 20; then
+            sleep 2
+          else
+            echo "No daily-reward Close button found - assuming no popup."
+          fi
+          # If there was no popup, the swipe above scrolled the start menu
+          # itself, which could leave PLAY above the visible area. Scroll
+          # back to the top either way.
+          idb --udid "$DEVICE_ID" ui swipe 196 150 196 750 || true
+          sleep 1
+          xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/01b-after-popup-dismiss.png || true
 
           echo "--- Start menu: looking for PLAY ---"
           if tap_label "PLAY" 196 80 820 20; then
