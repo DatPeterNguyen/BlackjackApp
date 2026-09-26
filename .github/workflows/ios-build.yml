@@ -160,12 +160,18 @@ jobs:
           path: ${{ steps.find-app.outputs.app_path }}
           retention-days: 14
 
-      - name: Boot a simulator and install the Debug build
-        # The runner has no display and this workflow has no human at the
-        # keyboard, so there's no way to actually tap around the app from
-        # here - what this CAN prove, headlessly, is that it genuinely
-        # boots and runs in a real iOS Simulator rather than just compiling.
-        # The screenshot below is the evidence of that.
+      - name: Install idb (iOS Simulator UI automation)
+        # idb (facebook/idb) drives the simulator the way a person would -
+        # tapping specific points and hit-testing what's there - which is
+        # what turns the boot-and-screenshot step below into an actual
+        # regression test for the Play freeze instead of a boot check.
+        run: brew install facebook/fb/idb
+
+      - name: Boot a simulator and install the Debug build, then tap through Play
+        # The runner has no display and no human at the keyboard, but idb
+        # (installed above) can synthesize the same taps a person would -
+        # see the "Automated tap-through" comment below for what this
+        # actually drives the app through and why.
         run: |
           BUNDLE_ID="com.companyname.blackjackapp.maui"
           echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_ENV"
@@ -221,17 +227,121 @@ jobs:
           fi
 
           # Let the start-menu screen (and its daily-reward popup, if one's
-          # due) finish rendering before the screenshot below.
+          # due) finish rendering before driving any taps.
           sleep 8
+
+          # --- Automated tap-through: Play -> mode picker -> Play ---
+          #
+          # This is the sequence that's been reported to freeze on Appetize
+          # (StartGameWith in GameMenuPage.xaml.cs): press Play on the start
+          # menu, then Play again on the RulesPage mode picker. No earlier
+          # version of this workflow ever pressed anything - it booted the
+          # app and left it on the start menu - so it could never have
+          # caught this. Doing the same two taps here, in the one
+          # environment this project already fully controls and logs,
+          # means every push answers the "does it still freeze" question
+          # itself instead of waiting on a manual Appetize pass.
+          #
+          # idb's own accessibility-tree dump (`ui describe-all`) is known
+          # broken on iOS 26.x simulators as of this writing - it reports
+          # only the root application node back. Single-point hit-testing
+          # (`ui describe-point`) is reported to still work, so element
+          # lookup below is a plain vertical scan at a fixed x: probe a
+          # column of points down the screen and tap the first one whose
+          # accessibility label matches. Slower than reading one
+          # accessibility tree, but it doesn't depend on the part that's
+          # broken.
+          mkdir -p simulator-screenshots
+          xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/01-start-menu.png || true
+
+          idb list-targets || echo "::warning::idb list-targets failed - idb may not see this simulator"
+
+          # tap_label LABEL X Y_START Y_END Y_STEP - scans (X, y) for y in
+          # [Y_START, Y_END] stepping by Y_STEP, taps the first point whose
+          # describe-point hit mentions LABEL, and fails if none did.
+          tap_label() {
+            local label="$1" x="$2" y_start="$3" y_end="$4" y_step="$5"
+            local y hit
+            for y in $(seq "$y_start" "$y_step" "$y_end"); do
+              hit=$(idb --udid "$DEVICE_ID" ui describe-point "$x" "$y" 2>&1) || true
+              if echo "$hit" | grep -qi "$label"; then
+                echo "Found '$label' at ($x, $y): $hit"
+                idb --udid "$DEVICE_ID" ui tap "$x" "$y" || true
+                return 0
+              fi
+            done
+            echo "::error::Never found a point labelled '$label' scanning x=$x, y=$y_start..$y_end"
+            return 1
+          }
+
+          AUTOMATION_OK=1
+
+          echo "--- Start menu: looking for PLAY ---"
+          if tap_label "PLAY" 196 80 820 20; then
+            sleep 3
+            xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/02-after-start-menu-play.png || true
+
+            # RulesPage's rule text can be tall enough to push its own Play
+            # button below the fold, unlike the start menu's fixed short
+            # button list - scroll it fully into view first. Over-scrolling
+            # just settles at the bottom of the ScrollView, so there's no
+            # need to know the exact content height to do this safely.
+            idb --udid "$DEVICE_ID" ui swipe 196 700 196 100 || true
+            idb --udid "$DEVICE_ID" ui swipe 196 700 196 100 || true
+            sleep 1
+            xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/03-rules-scrolled.png || true
+
+            echo "--- Rules page: looking for PLAY ---"
+            # RulesPage's Play button shares its row with a narrower Close
+            # button to its right (Grid ColumnDefinitions="*,Auto"), so it
+            # isn't centered the way the start menu's full-width button is
+            # - x=100 stays safely inside Play's column either way.
+            if tap_label "PLAY" 100 80 820 20; then
+              sleep 5
+              xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/04-after-rules-play.png || true
+
+              # A real hang leaves the process running but unresponsive to
+              # hit-testing, unlike a clean transition or a crash - so this
+              # confirms the UI is still answering at all, not just that
+              # the app didn't outright die.
+              echo "--- Checking the UI is still responsive after the second Play ---"
+              if timeout 15 idb --udid "$DEVICE_ID" ui describe-point 196 400; then
+                echo "UI responded - no freeze detected."
+              else
+                echo "::error::UI did not respond within 15s after the second Play - this is the freeze."
+                AUTOMATION_OK=0
+              fi
+            else
+              echo "::error::Could not find Play on the Rules page - see 03-rules-scrolled.png"
+              AUTOMATION_OK=0
+            fi
+          else
+            echo "::error::Could not find Play on the start menu - see 01-start-menu.png"
+            AUTOMATION_OK=0
+          fi
+
+          xcrun simctl io "$DEVICE_ID" screenshot simulator-screenshots/05-final-state.png || true
 
           kill "$LOG_PID" "$APP_PID" 2>/dev/null || true
 
-      - name: Screenshot the running app
+          # Fail the step (red X, easy to spot in the Actions run) exactly
+          # when the tap-through didn't complete cleanly - a missing button
+          # or an unresponsive UI. Screenshots and logs are already written
+          # above and the later upload steps run regardless (if: always()),
+          # so failing here loses no diagnostic evidence.
+          if [ "$AUTOMATION_OK" -ne 1 ]; then
+            echo "::error::Automated Play tap-through did not complete cleanly - see the screenshots and logs artifacts."
+            exit 1
+          fi
+
+      - name: Screenshot the running app (post-kill sanity check)
+        if: always()
         run: |
           mkdir -p simulator-screenshots
-          xcrun simctl io "$device_id" screenshot simulator-screenshots/01-launch.png
+          xcrun simctl io "$device_id" screenshot simulator-screenshots/06-post-kill.png || true
 
-      - name: Upload simulator screenshot
+      - name: Upload simulator screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: BlackjackApp-iOS-Simulator-Screenshot
